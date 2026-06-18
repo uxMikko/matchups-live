@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>matchups.live — World Cup 2026 Live Bracket</title>
+<meta name="description" content="Live Round of 32 bracket for FIFA World Cup 2026. Auto-updates on every goal. Group standings with qualification line.">
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d26;
+  --border: #2a2d3a;
+  --text: #e8eaf0;
+  --muted: #7a7f96;
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --pulse: #f59e0b;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.5; }
+a { color: var(--blue); text-decoration: none; }
+
+/* Header */
+header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.site-name { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+#last-updated { font-size: 12px; color: var(--muted); }
+
+/* Sections */
+.section { padding: 20px 16px 8px; }
+.section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+
+/* Live strip */
+#live-strip { display: none; }
+.live-match-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--red);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.live-badge { background: var(--red); color: white; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; animation: pulse-red 1.5s infinite; }
+@keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:.5} }
+.live-score { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+.live-teams { flex: 1; }
+.live-meta { font-size: 12px; color: var(--muted); }
+
+/* Bracket */
+.bracket-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 480px) { .bracket-grid { grid-template-columns: 1fr; } }
+
+.tie-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 14px;
+  transition: border-color 0.3s;
+}
+.tie-card.just-updated {
+  border-color: var(--pulse);
+  animation: pulse-border 2s ease-out;
+}
+@keyframes pulse-border {
+  0% { box-shadow: 0 0 0 0 rgba(245,158,11,0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+  100% { box-shadow: none; }
+}
+.tie-card.confirmed .tie-team { opacity: 1; }
+.tie-card.projected .tie-team { opacity: 0.75; }
+.tie-slot { font-size: 10px; color: var(--muted); margin-bottom: 7px; display: flex; align-items: center; justify-content: space-between; }
+.updating-badge { font-size: 10px; color: var(--pulse); font-weight: 700; }
+.tie-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 14px; font-weight: 600; }
+.tie-team .flag { font-size: 18px; }
+.tie-team .name { flex: 1; }
+.tie-team .detail { font-size: 11px; color: var(--muted); font-weight: 400; }
+.vs-line { text-align: center; font-size: 11px; color: var(--muted); padding: 2px 0; }
+
+/* Standings */
+.groups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 520px) { .groups-grid { grid-template-columns: 1fr; } }
+
+.group-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.group-header { padding: 8px 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--muted); }
+.group-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.group-table th { color: var(--muted); padding: 4px 10px; text-align: center; font-weight: 500; }
+.group-table th:first-child { text-align: left; }
+.group-table td { padding: 5px 10px; border-top: 1px solid rgba(42,45,58,0.6); text-align: center; }
+.group-table td:first-child { text-align: left; }
+.group-table tr.q1, .group-table tr.q2 { border-left: 3px solid var(--green); }
+.group-table tr.q3 { border-left: 3px solid var(--amber); }
+.group-table tr.q4 { border-left: 3px solid transparent; }
+.team-cell { display: flex; align-items: center; gap: 6px; }
+.cutoff-row td { padding-top: 8px; border-top: 2px dashed var(--red) !important; }
+.cutoff-label { font-size: 10px; color: var(--red); font-weight: 700; padding: 4px 10px 0; }
+
+/* Thirds race */
+.thirds-list { display: flex; flex-direction: column; gap: 4px; }
+.third-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: var(--surface); border-radius: 6px; border: 1px solid var(--border); font-size: 13px; }
+.third-row.qualifies { border-left: 3px solid var(--green); }
+.third-row.borderline { border-left: 3px solid var(--amber); border-top: 2px dashed var(--red); }
+.third-row.out { border-left: 3px solid transparent; opacity: 0.6; }
+.third-rank { width: 22px; font-size: 12px; color: var(--muted); text-align: center; }
+.third-team { flex: 1; font-weight: 600; }
+.third-pts { color: var(--muted); font-size: 12px; }
+
+/* Coming soon */
+.coming-soon { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px 16px; text-align: center; color: var(--muted); }
+.coming-soon h3 { font-size: 14px; margin-bottom: 6px; color: var(--text); }
+.coming-soon p { font-size: 13px; }
+
+.max-w { max-width: 900px; margin: 0 auto; }
+.spinner { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="site-name">matchups.live</div>
+  <div id="last-updated">Loading…</div>
+</header>
+
+<div class="max-w">
+
+  <!-- LIVE STRIP -->
+  <div id="live-strip" class="section">
+    <div class="section-title">🔴 Live Now</div>
+    <div id="live-matches-container"></div>
+  </div>
+
+  <!-- ROUND OF 32 -->
+  <div class="section">
+    <div class="section-title">Round of 32 — Bracket Projection</div>
+    <div id="bracket-spinner" class="spinner">Loading bracket…</div>
+    <div id="bracket-grid" class="bracket-grid" style="display:none"></div>
+  </div>
+
+  <!-- GROUP STANDINGS -->
+  <div class="section">
+    <div class="section-title">Group Standings</div>
+    <div id="standings-grid" class="groups-grid"></div>
+  </div>
+
+  <!-- THIRD-PLACE RACE -->
+  <div class="section" id="thirds-section" style="display:none">
+    <div class="section-title">Third-Place Race <span style="color:var(--red);font-size:10px">— — — qualification line — — —</span></div>
+    <div id="thirds-list" class="thirds-list"></div>
+  </div>
+
+  <!-- COMING SOON -->
+  <div class="section">
+    <div class="coming-soon">
+      <h3>Predicted End State 🔜</h3>
+      <p>Odds-based probability for each team's final position. Coming soon.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const FLAGS = {
+  "Mexico":"🇲🇽","South Korea":"🇰🇷","South Africa":"🇿🇦","Czech Republic":"🇨🇿",
+  "Canada":"🇨🇦","Switzerland":"🇨🇭","Qatar":"🇶🇦","Bosnia-Herzegovina":"🇧🇦",
+  "Brazil":"🇧🇷","Morocco":"🇲🇦","Haiti":"🇭🇹","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+  "USA":"🇺🇸","Paraguay":"🇵🇾","Australia":"🇦🇺","Turkey":"🇹🇷",
+  "Germany":"🇩🇪","Curacao":"🇨🇼","Ivory Coast":"🇨🇮","Ecuador":"🇪🇨",
+  "Netherlands":"🇳🇱","Japan":"🇯🇵","Sweden":"🇸🇪","Tunisia":"🇹🇳",
+  "Belgium":"🇧🇪","Egypt":"🇪🇬","Iran":"🇮🇷","New Zealand":"🇳🇿",
+  "Spain":"🇪🇸","Cape Verde":"🇨🇻","Saudi Arabia":"🇸🇦","Uruguay":"🇺🇾",
+  "France":"🇫🇷","Senegal":"🇸🇳","Norway":"🇳🇴","Iraq":"🇮🇶",
+  "Argentina":"🇦🇷","Algeria":"🇩🇿","Austria":"🇦🇹","Jordan":"🇯🇴",
+  "Portugal":"🇵🇹","DR Congo":"🇨🇩","Uzbekistan":"🇺🇿","Colombia":"🇨🇴",
+  "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Croatia":"🇭🇷","Ghana":"🇬🇭","Panama":"🇵🇦",
+};
+function flag(t) { return FLAGS[t] || "🏳"; }
+
+let prevBracket = null;
+const updatedSlots = new Set();
+
+// ── LIVE STRIP ────────────────────────────────────────────────────────────────
+function renderLive(liveMatches) {
+  const strip = document.getElementById("live-strip");
+  const container = document.getElementById("live-matches-container");
+  if (!liveMatches || liveMatches.length === 0) {
+    strip.style.display = "none";
+    return;
+  }
+  strip.style.display = "block";
+  container.innerHTML = liveMatches.map(m => `
+    <div class="live-match-card">
+      <span class="live-badge">LIVE</span>
+      <div class="live-teams">
+        <div class="live-score">${flag(m.home)} ${m.home_score ?? "–"}&ndash;${m.away_score ?? "–"} ${flag(m.away)}</div>
+        <div class="live-meta">Group ${m.group} &middot; ${m.minute || "–"}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+// ── BRACKET ───────────────────────────────────────────────────────────────────
+function detectChanges(newBracket) {
+  if (!prevBracket) return;
+  const prevMap = Object.fromEntries(prevBracket.map(m => [m.slot, m]));
+  for (const match of newBracket) {
+    const prev = prevMap[match.slot];
+    if (!prev) continue;
+    const changed =
+      prev.home?.team !== match.home?.team ||
+      prev.away?.team !== match.away?.team;
+    if (changed) updatedSlots.add(match.slot);
+  }
+  setTimeout(() => updatedSlots.clear(), 120000); // clear after 2 min
+}
+
+function teamRow(t) {
+  if (!t || !t.team) return `<div class="tie-team"><span class="flag">🏳</span><span class="name" style="color:var(--muted)">${t?.label || "TBD"}</span></div>`;
+  return `<div class="tie-team"><span class="flag">${flag(t.team)}</span><span class="name">${t.team}</span><span class="detail">${t.label}</span></div>`;
+}
+
+function renderBracket(bracket) {
+  const grid = document.getElementById("bracket-grid");
+  const spinner = document.getElementById("bracket-spinner");
+  if (!bracket || bracket.length === 0) return;
+
+  detectChanges(bracket);
+  prevBracket = bracket;
+  spinner.style.display = "none";
+  grid.style.display = "grid";
+
+  grid.innerHTML = bracket.map(m => {
+    const isUpdated = updatedSlots.has(m.slot);
+    const isLive = false; // TODO: match to live_matches
+    const state = m.home?.played > 0 && m.away?.played > 0 ? "confirmed" : "projected";
+    return `
+    <div class="tie-card ${state}${isUpdated ? " just-updated" : ""}">
+      <div class="tie-slot">
+        <span>${m.slot}</span>
+        ${isUpdated ? '<span class="updating-badge">🔴 UPDATING</span>' : ''}
+        ${state === "projected" ? '<span style="color:var(--muted);font-size:10px">projected</span>' : ''}
+      </div>
+      ${teamRow(m.home)}
+      <div class="vs-line">vs</div>
+      ${teamRow(m.away)}
+    </div>`;
+  }).join("");
+}
+
+// ── STANDINGS ─────────────────────────────────────────────────────────────────
+function renderStandings(standings) {
+  const grid = document.getElementById("standings-grid");
+  if (!standings || Object.keys(standings).length === 0) return;
+
+  const groups = "ABCDEFGHIJKL".split("");
+  grid.innerHTML = groups.map(g => {
+    const teams = standings[g] || [];
+    const rows = teams.map((t, i) => {
+      const posClass = ["q1","q2","q3","q4"][i] || "q4";
+      return `<tr class="${posClass}">
+        <td><div class="team-cell">${flag(t.name)} ${t.name}</div></td>
+        <td>${t.points}</td>
+        <td>${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</td>
+        <td>${t.goals_for}</td>
+        <td>${t.played}</td>
+      </tr>`;
+    }).join("");
+    return `<div class="group-card">
+      <div class="group-header">Group ${g}</div>
+      <table class="group-table">
+        <thead><tr><th>Team</th><th>Pts</th><th>GD</th><th>GF</th><th>P</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).join("");
+}
+
+// ── THIRDS RACE ───────────────────────────────────────────────────────────────
+function renderThirds(thirds) {
+  const section = document.getElementById("thirds-section");
+  const list = document.getElementById("thirds-list");
+  if (!thirds || thirds.length === 0) { section.style.display = "none"; return; }
+
+  // Only show if any matches played
+  const anyPlayed = thirds.some(t => t.played > 0);
+  if (!anyPlayed) { section.style.display = "none"; return; }
+  section.style.display = "block";
+
+  list.innerHTML = thirds.map((t, i) => {
+    let cls = t.qualifies ? "qualifies" : "out";
+    if (t.cutoff) cls = "borderline"; // the 8th place qualifier
+    const borderline = i === 8 ? '<div class="cutoff-label">▲ Qualification line</div>' : '';
+    return `${borderline}<div class="third-row ${cls}">
+      <div class="third-rank">${t.rank}</div>
+      <div class="third-team">${flag(t.name)} ${t.name}</div>
+      <div class="third-pts">${t.points}pts ${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff} Grp ${t.group}</div>
+    </div>`;
+  }).join("");
+}
+
+// ── LAST UPDATED ──────────────────────────────────────────────────────────────
+function renderLastUpdated(ts) {
+  const el = document.getElementById("last-updated");
+  if (!ts) { el.textContent = ""; return; }
+  const diff = Math.floor((Date.now() / 1000) - ts);
+  if (diff < 60) el.textContent = "Updated just now";
+  else if (diff < 3600) el.textContent = `Updated ${Math.floor(diff/60)}m ago`;
+  else el.textContent = `Updated ${Math.floor(diff/3600)}h ago`;
+}
+
+// ── POLLING ───────────────────────────────────────────────────────────────────
+async function fetchState() {
+  try {
+    const res = await fetch("/api/state");
+    if (!res.ok) return;
+    const data = await res.json();
+    renderLive(data.live_matches);
+    renderBracket(data.bracket);
+    renderStandings(data.standings);
+    renderThirds(data.thirds_race);
+    renderLastUpdated(data.last_updated);
+  } catch (e) {
+    console.error("fetch error:", e);
+  }
+}
+
+fetchState();
+setInterval(fetchState, 30000);
+setInterval(() => renderLastUpdated(prevBracket ? Date.now()/1000 - 30 : null), 30000);
+</script>
+</body>
+</html>
