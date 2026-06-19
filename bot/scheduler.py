@@ -113,6 +113,17 @@ async def _on_match_finished(match: dict, score, db_path: str):
 
 async def _push_full_state(db_path: str, live_match=None):
     results = await _load_results(db_path)
+    if live_match and live_match.get("home_score") is not None:
+        # Project standings/bracket with the live, unconfirmed score so they
+        # don't sit stale until full-time; the DB (and "official" results)
+        # only gets the final score once the match actually finishes.
+        results = results + [{
+            "home": live_match["home"],
+            "away": live_match["away"],
+            "group": live_match["group"],
+            "home_score": live_match["home_score"],
+            "away_score": live_match["away_score"],
+        }]
     state = engine.compute_state(results)
     live = [live_match] if live_match else []
     await rc.push_state(
