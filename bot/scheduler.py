@@ -17,84 +17,16 @@ log = logging.getLogger("scheduler")
 
 PARIS = ZoneInfo("Europe/Paris")  # GMT+2 during tournament
 
-# Full match schedule — datetime strings are GMT+2 (Europe/Paris)
-MATCHES = [
-    # MATCHDAY 1
-    {"dt": "2026-06-17 19:00", "home": "Portugal",          "away": "DR Congo",          "group": "K", "md": 1},
-    {"dt": "2026-06-17 22:00", "home": "England",            "away": "Croatia",            "group": "L", "md": 1},
-    {"dt": "2026-06-18 01:00", "home": "Ghana",              "away": "Panama",             "group": "L", "md": 1},
-    {"dt": "2026-06-18 04:00", "home": "Uzbekistan",         "away": "Colombia",           "group": "K", "md": 1},
-    {"dt": "2026-06-18 18:00", "home": "Czech Republic",     "away": "South Africa",       "group": "A", "md": 1},
-    {"dt": "2026-06-18 21:00", "home": "Switzerland",        "away": "Bosnia-Herzegovina", "group": "B", "md": 1},
-    {"dt": "2026-06-19 00:00", "home": "Canada",             "away": "Qatar",              "group": "B", "md": 1},
-    {"dt": "2026-06-19 03:00", "home": "Mexico",             "away": "South Korea",        "group": "A", "md": 1},
-    {"dt": "2026-06-19 21:00", "home": "USA",                "away": "Australia",          "group": "D", "md": 1},
-    {"dt": "2026-06-20 00:00", "home": "Scotland",           "away": "Morocco",            "group": "C", "md": 1},
-    {"dt": "2026-06-20 02:30", "home": "Brazil",             "away": "Haiti",              "group": "C", "md": 1},
-    {"dt": "2026-06-20 05:00", "home": "Turkey",             "away": "Paraguay",           "group": "D", "md": 1},
-    {"dt": "2026-06-20 19:00", "home": "Netherlands",        "away": "Sweden",             "group": "F", "md": 1},
-    {"dt": "2026-06-20 22:00", "home": "Germany",            "away": "Ivory Coast",        "group": "E", "md": 1},
-    {"dt": "2026-06-21 02:00", "home": "Ecuador",            "away": "Curacao",            "group": "E", "md": 1},
-    {"dt": "2026-06-21 06:00", "home": "Tunisia",            "away": "Japan",              "group": "F", "md": 1},
-    {"dt": "2026-06-21 18:00", "home": "Spain",              "away": "Saudi Arabia",       "group": "H", "md": 1},
-    {"dt": "2026-06-21 21:00", "home": "Belgium",            "away": "Iran",               "group": "G", "md": 1},
-    {"dt": "2026-06-22 00:00", "home": "Uruguay",            "away": "Cape Verde",         "group": "H", "md": 1},
-    {"dt": "2026-06-22 03:00", "home": "New Zealand",        "away": "Egypt",              "group": "G", "md": 1},
-    {"dt": "2026-06-22 19:00", "home": "Argentina",          "away": "Austria",            "group": "J", "md": 1},
-    {"dt": "2026-06-22 23:00", "home": "France",             "away": "Iraq",               "group": "I", "md": 1},
-    {"dt": "2026-06-23 02:00", "home": "Norway",             "away": "Senegal",            "group": "I", "md": 1},
-    {"dt": "2026-06-23 05:00", "home": "Jordan",             "away": "Algeria",            "group": "J", "md": 1},
-    # MATCHDAY 2
-    {"dt": "2026-06-21 21:00", "home": "Mexico",             "away": "South Africa",       "group": "A", "md": 2},
-    {"dt": "2026-06-22 00:00", "home": "South Korea",        "away": "Czech Republic",     "group": "A", "md": 2},
-    {"dt": "2026-06-22 00:00", "home": "Canada",             "away": "Bosnia-Herzegovina", "group": "B", "md": 2},
-    {"dt": "2026-06-22 03:00", "home": "Switzerland",        "away": "Qatar",              "group": "B", "md": 2},
-    {"dt": "2026-06-23 00:00", "home": "Brazil",             "away": "Morocco",            "group": "C", "md": 2},
-    {"dt": "2026-06-23 03:00", "home": "Haiti",              "away": "Scotland",           "group": "C", "md": 2},
-    {"dt": "2026-06-23 05:00", "home": "USA",                "away": "Paraguay",           "group": "D", "md": 2},
-    {"dt": "2026-06-23 08:00", "home": "Australia",          "away": "Turkey",             "group": "D", "md": 2},
-    {"dt": "2026-06-23 19:00", "home": "Portugal",           "away": "Uzbekistan",         "group": "K", "md": 2},
-    {"dt": "2026-06-23 22:00", "home": "England",            "away": "Ghana",              "group": "L", "md": 2},
-    {"dt": "2026-06-24 01:00", "home": "Panama",             "away": "Croatia",            "group": "L", "md": 2},
-    {"dt": "2026-06-24 02:00", "home": "Germany",            "away": "Curacao",            "group": "E", "md": 2},
-    {"dt": "2026-06-24 04:00", "home": "Colombia",           "away": "DR Congo",           "group": "K", "md": 2},
-    {"dt": "2026-06-24 05:00", "home": "Ivory Coast",        "away": "Ecuador",            "group": "E", "md": 2},
-    {"dt": "2026-06-24 06:00", "home": "Netherlands",        "away": "Japan",              "group": "F", "md": 2},
-    {"dt": "2026-06-24 09:00", "home": "Sweden",             "away": "Tunisia",            "group": "F", "md": 2},
-    {"dt": "2026-06-25 00:00", "home": "Spain",              "away": "Cape Verde",         "group": "H", "md": 2},
-    {"dt": "2026-06-25 03:00", "home": "Saudi Arabia",       "away": "Uruguay",            "group": "H", "md": 2},
-    {"dt": "2026-06-25 03:00", "home": "Belgium",            "away": "Egypt",              "group": "G", "md": 2},
-    {"dt": "2026-06-25 06:00", "home": "Iran",               "away": "New Zealand",        "group": "G", "md": 2},
-    {"dt": "2026-06-26 02:00", "home": "France",             "away": "Senegal",            "group": "I", "md": 2},
-    {"dt": "2026-06-26 05:00", "home": "Norway",             "away": "Iraq",               "group": "I", "md": 2},
-    {"dt": "2026-06-26 05:00", "home": "Argentina",          "away": "Algeria",            "group": "J", "md": 2},
-    {"dt": "2026-06-26 08:00", "home": "Austria",            "away": "Jordan",             "group": "J", "md": 2},
-    # MATCHDAY 3 — simultaneous pairs
-    {"dt": "2026-06-24 21:00", "home": "Bosnia-Herzegovina", "away": "Qatar",              "group": "B", "md": 3},
-    {"dt": "2026-06-24 21:00", "home": "Switzerland",        "away": "Canada",             "group": "B", "md": 3},
-    {"dt": "2026-06-25 00:00", "home": "Morocco",            "away": "Haiti",              "group": "C", "md": 3},
-    {"dt": "2026-06-25 00:00", "home": "Scotland",           "away": "Brazil",             "group": "C", "md": 3},
-    {"dt": "2026-06-25 03:00", "home": "Czech Republic",     "away": "Mexico",             "group": "A", "md": 3},
-    {"dt": "2026-06-25 03:00", "home": "South Africa",       "away": "South Korea",        "group": "A", "md": 3},
-    {"dt": "2026-06-25 22:00", "home": "Curacao",            "away": "Ivory Coast",        "group": "E", "md": 3},
-    {"dt": "2026-06-25 22:00", "home": "Ecuador",            "away": "Germany",            "group": "E", "md": 3},
-    {"dt": "2026-06-26 01:00", "home": "Japan",              "away": "Sweden",             "group": "F", "md": 3},
-    {"dt": "2026-06-26 01:00", "home": "Tunisia",            "away": "Netherlands",        "group": "F", "md": 3},
-    {"dt": "2026-06-26 04:00", "home": "Paraguay",           "away": "Australia",          "group": "D", "md": 3},
-    {"dt": "2026-06-26 04:00", "home": "Turkey",             "away": "USA",                "group": "D", "md": 3},
-    {"dt": "2026-06-26 21:00", "home": "Norway",             "away": "France",             "group": "I", "md": 3},
-    {"dt": "2026-06-26 21:00", "home": "Senegal",            "away": "Iraq",               "group": "I", "md": 3},
-    {"dt": "2026-06-27 02:00", "home": "Cape Verde",         "away": "Saudi Arabia",       "group": "H", "md": 3},
-    {"dt": "2026-06-27 02:00", "home": "Uruguay",            "away": "Spain",              "group": "H", "md": 3},
-    {"dt": "2026-06-27 05:00", "home": "Egypt",              "away": "Iran",               "group": "G", "md": 3},
-    {"dt": "2026-06-27 05:00", "home": "New Zealand",        "away": "Belgium",            "group": "G", "md": 3},
-    {"dt": "2026-06-27 23:00", "home": "Croatia",            "away": "Ghana",              "group": "L", "md": 3},
-    {"dt": "2026-06-27 23:00", "home": "Panama",             "away": "England",            "group": "L", "md": 3},
-    {"dt": "2026-06-28 01:30", "home": "Colombia",           "away": "Portugal",           "group": "K", "md": 3},
-    {"dt": "2026-06-28 01:30", "home": "DR Congo",           "away": "Uzbekistan",         "group": "K", "md": 3},
-    {"dt": "2026-06-28 04:00", "home": "Algeria",            "away": "Austria",            "group": "J", "md": 3},
-    {"dt": "2026-06-28 04:00", "home": "Jordan",             "away": "Argentina",          "group": "J", "md": 3},
-]
+MATCHES: list[dict] = []  # populated by load_matches() at startup
+
+
+async def load_matches():
+    """Fetch the real group-stage fixture list from ESPN instead of hand-
+    maintaining it (which drifted from reality). Must be called once before
+    backfill_completed() or run_schedule() are used."""
+    global MATCHES
+    MATCHES = await scraper.fetch_group_stage_matches()
+    log.info(f"Loaded {len(MATCHES)} group-stage matches from ESPN")
 
 
 def kickoff_dt(match: dict) -> datetime:
@@ -112,11 +44,12 @@ async def handle_match_window(match: dict, db_path: str):
     On goal or FT: recompute state, push to Redis.
     """
     home, away = match["home"], match["away"]
+    kickoff = kickoff_dt(match)
     log.info(f"Window open: {home} vs {away}")
 
     # Initial poll to confirm started
     await asyncio.sleep(60)
-    score = await scraper.scrape_match(home, away)
+    score = await scraper.scrape_match(home, away, kickoff)
     if score:
         await _on_score(match, score, db_path)
 
@@ -127,7 +60,7 @@ async def handle_match_window(match: dict, db_path: str):
     while elapsed < 105:  # minimum match duration
         await asyncio.sleep(30)
         elapsed += 0.5
-        score = await scraper.scrape_match(home, away)
+        score = await scraper.scrape_match(home, away, kickoff)
         if score:
             current = (score.home_score, score.away_score)
             if current != last_score:
@@ -136,7 +69,7 @@ async def handle_match_window(match: dict, db_path: str):
                 last_score = current
 
     # Now poll actively for FT
-    final = await scraper.wait_for_fulltime(home, away, kickoff_plus=105)
+    final = await scraper.wait_for_fulltime(home, away, kickoff, kickoff_plus=105)
     if final:
         await _on_match_finished(match, final, db_path)
 

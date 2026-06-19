@@ -1,7 +1,7 @@
 """
 Startup + orchestrator.
 1. Init DB
-2. Search Google for completed results
+2. Fetch completed results from ESPN's scoreboard
 3. Run engine on known results, push baseline to Redis
 4. Hand off to scheduler
 """
@@ -59,7 +59,7 @@ async def init_db():
 
 
 async def backfill_completed():
-    """Search Google for results of all already-completed matches."""
+    """Fetch results from ESPN's scoreboard for all already-completed matches."""
     now = datetime.now(PARIS)
     completed = [
         m for m in scheduler.MATCHES
@@ -74,8 +74,8 @@ async def backfill_completed():
                 if await cur.fetchone():
                     continue  # Already have this result
 
-            log.info(f"  Scraping: {m['home']} vs {m['away']}")
-            score = await scraper.scrape_match(m["home"], m["away"])
+            log.info(f"  Fetching: {m['home']} vs {m['away']}")
+            score = await scraper.scrape_match(m["home"], m["away"], scheduler.kickoff_dt(m))
             if score and score.home_score is not None:
                 await db.execute("""
                     INSERT OR REPLACE INTO results
@@ -86,7 +86,7 @@ async def backfill_completed():
                 log.info(f"    → {m['home']} {score.home_score}-{score.away_score} {m['away']}")
             else:
                 log.warning(f"    → No result found for {m['home']} vs {m['away']}")
-            await asyncio.sleep(2)  # Be polite to Google
+            await asyncio.sleep(0.5)
         await db.commit()
 
 
@@ -121,6 +121,7 @@ async def push_baseline():
 async def main():
     log.info("=== matchups.live bot starting ===")
     await init_db()
+    await scheduler.load_matches()
     await backfill_completed()
     await push_baseline()
     await scheduler.run_schedule(DB_PATH)
