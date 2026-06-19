@@ -72,7 +72,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 }
 .tie-card.confirmed .tie-team { opacity: 1; }
 .tie-card.projected .tie-team { opacity: 0.75; }
-.tie-slot { font-size: 10px; color: var(--muted); margin-bottom: 7px; display: flex; align-items: center; justify-content: space-between; }
+.tie-slot { font-size: 10px; color: var(--muted); margin-bottom: 7px; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .updating-badge { font-size: 10px; color: var(--pulse); font-weight: 700; }
 .tie-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 14px; font-weight: 600; }
 .tie-team .flag { font-size: 18px; }
@@ -238,7 +238,6 @@ function renderBracket(bracket) {
     return `
     <div class="tie-card ${state}${isUpdated ? " just-updated" : ""}">
       <div class="tie-slot">
-        <span>${m.slot}</span>
         ${isUpdated ? '<span class="updating-badge">🔴 UPDATING</span>' : ''}
         ${state === "projected" ? '<span style="color:var(--muted);font-size:10px">projected</span>' : ''}
       </div>
