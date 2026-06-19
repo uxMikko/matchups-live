@@ -16,12 +16,12 @@ async def redis_set(key: str, value) -> bool:
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(
-                f"{UPSTASH_URL}/set/{key}",
+                UPSTASH_URL,
                 headers=_HEADERS,
-                json={"value": serialized},
+                json=["SET", key, serialized],
                 timeout=8,
             )
-            return r.status_code == 200
+            return r.status_code == 200 and r.json().get("result") == "OK"
     except Exception as e:
         print(f"[redis_set] {key}: {e}")
         return False
