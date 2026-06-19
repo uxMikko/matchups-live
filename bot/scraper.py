@@ -112,10 +112,19 @@ def _score_from_event(event: dict) -> MatchScore:
         home_score = int(home["score"])
         away_score = int(away["score"])
 
+    # The clock freezes rather than disappearing once play has stopped (e.g.
+    # "45'+5'" sits there through halftime, "90'+8'" through full-time), so
+    # show ESPN's status description instead of the stale clock whenever the
+    # match isn't actually being played right now.
+    if status == "live":
+        minute = comp["status"].get("displayClock")
+    else:
+        minute = status_type.get("description")
+
     return MatchScore(
         home_score=home_score,
         away_score=away_score,
-        minute=comp["status"].get("displayClock"),
+        minute=minute,
         status=status,
     )
 
