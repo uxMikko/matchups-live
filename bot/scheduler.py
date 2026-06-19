@@ -124,10 +124,22 @@ async def _push_full_state(db_path: str, live_match=None):
 
 
 async def _load_results(db_path: str) -> list[dict]:
+    """Load results in the field format engine.compute_state() expects
+    (group, not the DB's group_letter column)."""
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM results") as cur:
-            return [dict(r) for r in await cur.fetchall()]
+            rows = [dict(r) for r in await cur.fetchall()]
+    return [
+        {
+            "home": r["home"],
+            "away": r["away"],
+            "group": r["group_letter"],
+            "home_score": r["home_score"],
+            "away_score": r["away_score"],
+        }
+        for r in rows
+    ]
 
 
 async def run_schedule(db_path: str):
