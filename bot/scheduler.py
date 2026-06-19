@@ -124,6 +124,7 @@ async def _push_full_state(db_path: str, live_match=None):
             "home_score": live_match["home_score"],
             "away_score": live_match["away_score"],
         }]
+    engine.OFFICIAL_RANKS = await scraper.fetch_group_ranks()
     state = engine.compute_state(results)
     live = [live_match] if live_match else []
     await rc.push_state(

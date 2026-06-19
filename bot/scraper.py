@@ -205,3 +205,39 @@ async def fetch_group_stage_matches() -> list[dict]:
 
     matches.sort(key=lambda m: m["dt"])
     return matches
+
+
+STANDINGS_URL = "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings"
+
+
+async def fetch_group_ranks() -> dict[str, int]:
+    """
+    Fetch ESPN's own official within-group rank (1-4) per team. Used as the
+    final tiebreaker instead of an approximate static FIFA-ranking table:
+    when two teams are level on points/GD/GF/head-to-head, the real deciding
+    factor (fair play points, or literally a FIFA drawing of lots) isn't
+    something we can compute ourselves, but ESPN's standings already reflect
+    the real resolved outcome.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                STANDINGS_URL,
+                params={"season": 2026},
+                headers={"User-Agent": USER_AGENT},
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        log.warning(f"ESPN standings fetch failed: {e}")
+        return {}
+
+    ranks: dict[str, int] = {}
+    for group in data.get("children", []):
+        for entry in group.get("standings", {}).get("entries", []):
+            name = entry["team"]["displayName"]
+            rank = next((s.get("value") for s in entry["stats"] if s["name"] == "rank"), None)
+            if rank is not None:
+                ranks[NAME_FROM_ESPN.get(name, name)] = int(rank)
+    return ranks

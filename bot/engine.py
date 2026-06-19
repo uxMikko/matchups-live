@@ -29,7 +29,15 @@ TEAM_TO_GROUP: dict[str, str] = {
     t: g for g, teams in GROUPS.items() for t in teams
 }
 
-# Approximate FIFA rankings — lower = better ranked (used as final tiebreaker)
+# ESPN's own resolved within-group rank (1-4), set by the caller via
+# scraper.fetch_group_ranks() before compute_state(). Preferred over
+# FIFA_RANKINGS below when present, since it reflects the real tiebreak
+# outcome rather than an approximation.
+OFFICIAL_RANKS: dict[str, int] = {}
+
+# Approximate FIFA rankings — lower = better ranked (last-resort tiebreaker
+# fallback when OFFICIAL_RANKS doesn't have an entry, e.g. before any real
+# matches have been played yet)
 FIFA_RANKINGS: dict[str, int] = {
     "Argentina": 1, "France": 2, "England": 3, "Belgium": 4, "Brazil": 5,
     "Portugal": 6, "Netherlands": 7, "Spain": 8, "Germany": 9, "USA": 10,
@@ -105,7 +113,7 @@ class TeamRecord:
             -self.goal_diff,
             -self.goals_for,
             self.fair_play,
-            FIFA_RANKINGS.get(self.name, 999),
+            OFFICIAL_RANKS.get(self.name) or FIFA_RANKINGS.get(self.name, 999),
         )
 
     def to_dict(self) -> dict:

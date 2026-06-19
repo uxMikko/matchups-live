@@ -108,6 +108,7 @@ async def push_baseline():
         for r in results
     ]
 
+    engine.OFFICIAL_RANKS = await scraper.fetch_group_ranks()
     state = engine.compute_state(engine_results)
     await rc.push_state(
         state["standings"],
