@@ -217,7 +217,8 @@ def rank_thirds(standings: dict[str, list[TeamRecord]]) -> list[tuple[str, TeamR
     return thirds  # index 0 = best third, index 7 = 8th (last qualifier)
 
 
-def thirds_race_payload(thirds: list[tuple[str, TeamRecord]]) -> list[dict]:
+def thirds_race_payload(thirds: list[tuple[str, TeamRecord]], pos_probs: dict | None = None) -> list[dict]:
+    pos_probs = pos_probs or {}
     out = []
     for i, (g, rec) in enumerate(thirds):
         d = rec.to_dict()
@@ -225,6 +226,7 @@ def thirds_race_payload(thirds: list[tuple[str, TeamRecord]]) -> list[dict]:
         d["rank"] = i + 1
         d["qualifies"] = i < 8
         d["cutoff"] = i == 7  # marks the 8th/9th boundary
+        d["prob"] = round(pos_probs.get(g, {}).get(rec.name, {}).get(3, 0.0), 4)
         out.append(d)
     return out
 
@@ -373,5 +375,5 @@ def compute_state(
     return {
         "standings": standings_payload,
         "bracket": bracket,
-        "thirds_race": thirds_race_payload(thirds),
+        "thirds_race": thirds_race_payload(thirds, pos_probs),
     }
