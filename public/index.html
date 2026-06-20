@@ -60,7 +60,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .bracket-tree {
   display: grid;
   grid-template-columns: 230px 160px 160px 150px 150px;
-  grid-template-rows: 22px repeat(16, 92px);
+  grid-template-rows: 22px repeat(16, minmax(92px, auto));
   gap: 8px 16px;
   min-width: 920px;
 }
@@ -75,7 +75,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   transition: box-shadow 0.3s;
   grid-column: 1;
-  align-self: stretch;
+  align-self: start;
 }
 .tie-card.just-updated {
   animation: pulse-border 2s ease-out;
@@ -128,11 +128,11 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .move-arrow { font-size: 10px; font-weight: 700; flex-shrink: 0; }
 .move-arrow.up { color: #16a34a; }
 .move-arrow.down { color: #dc2626; }
-.result-pill { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 8px; flex-shrink: 0; }
-.result-pill.w { background: #dcfce7; color: #16a34a; }
-.result-pill.l { background: #fde8e8; color: #b3514a; }
-.result-pill.d { background: #ececef; color: #52525b; }
-.result-pill.live { background: var(--red); color: #fff; display: inline-flex; align-items: center; gap: 4px; }
+.standings-live { width: 54px; flex-shrink: 0; display: flex; justify-content: center; }
+.result-pill { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 8px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; }
+.result-pill.live.winning { background: var(--green); color: #fff; }
+.result-pill.live.losing { background: var(--red); color: #fff; }
+.result-pill.live.tied { background: #6b7280; color: #fff; }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: pulse-red 1.2s infinite; }
 .standings-col { width: 30px; text-align: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
 .prob-pill { width: 42px; text-align: center; font-size: 11px; font-weight: 700; padding: 3px 0; border-radius: 8px; flex-shrink: 0; }
@@ -336,8 +336,10 @@ function renderStandings(standings, liveMatches) {
 
   const liveByTeam = {};
   (liveMatches || []).forEach(m => {
-    liveByTeam[m.home] = `${m.home_score ?? "–"}-${m.away_score ?? "–"}`;
-    liveByTeam[m.away] = `${m.away_score ?? "–"}-${m.home_score ?? "–"}`;
+    const state = m.home_score === m.away_score ? "tied" : m.home_score > m.away_score ? "winning" : "losing";
+    const flip = { winning: "losing", losing: "winning", tied: "tied" };
+    liveByTeam[m.home] = { score: `${m.home_score ?? "–"}-${m.away_score ?? "–"}`, state };
+    liveByTeam[m.away] = { score: `${m.away_score ?? "–"}-${m.home_score ?? "–"}`, state: flip[state] };
   });
 
   const newPositions = {};
@@ -357,13 +359,10 @@ function renderStandings(standings, liveMatches) {
         arrow = `<span class="move-arrow ${cls}">${symbol}${Math.abs(delta) > 1 ? Math.abs(delta) : ""}</span>`;
       }
 
-      let resultPill = "";
-      if (liveByTeam[t.name]) {
-        resultPill = `<span class="result-pill live"><span class="live-dot"></span>${liveByTeam[t.name]}</span>`;
-      } else if (t.last_result) {
-        const cls = t.last_result.outcome === "W" ? "w" : t.last_result.outcome === "L" ? "l" : "d";
-        resultPill = `<span class="result-pill ${cls}">${t.last_result.score}</span>`;
-      }
+      const live = liveByTeam[t.name];
+      const livePill = live
+        ? `<span class="result-pill live ${live.state}"><span class="live-dot"></span>${live.score}</span>`
+        : "";
 
       const probPct = Math.round((t.prob || 0) * 100);
       const probCls = (t.prob || 0) > 0.999 ? "certain" : "partial";
@@ -374,8 +373,8 @@ function renderStandings(standings, liveMatches) {
           ${flagImg(t.name)}
           <span class="name">${t.name}</span>
           ${arrow}
-          ${resultPill}
         </div>
+        <div class="standings-live">${livePill}</div>
         <div class="standings-col">${t.played}</div>
         <div class="standings-col">${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</div>
         <div class="standings-col">${t.points}</div>
@@ -385,6 +384,7 @@ function renderStandings(standings, liveMatches) {
     return `<div class="group-card">
       <div class="group-head">
         <span class="gh-name">Group ${g}</span>
+        <span class="gh-col" style="width:54px"></span>
         <span class="gh-col">MP</span><span class="gh-col">GD</span><span class="gh-col">Pts</span><span class="gh-col prob">Prob</span>
       </div>
       ${rows}

@@ -170,26 +170,6 @@ def build_standings(results: list[dict]) -> dict[str, list[TeamRecord]]:
     return {g: build_group_standings(g, results) for g in GROUPS}
 
 
-def last_results(results: list[dict]) -> dict[str, dict]:
-    """{team: {"score": "1-0", "outcome": "W"/"D"/"L"}} for each team's most
-    recent result, taken from results' input order (results are appended
-    chronologically by the live pipeline). Placeholder for the standings
-    table's "last match" pill — not used for any tiebreak logic."""
-    out: dict[str, dict] = {}
-    for r in results:
-        hs, as_ = r.get("home_score"), r.get("away_score")
-        if hs is None or as_ is None:
-            continue
-        home, away = r["home"], r["away"]
-        if hs > as_:
-            home_outcome, away_outcome = "W", "L"
-        elif hs == as_:
-            home_outcome = away_outcome = "D"
-        else:
-            home_outcome, away_outcome = "L", "W"
-        out[home] = {"score": f"{hs}-{as_}", "outcome": home_outcome}
-        out[away] = {"score": f"{as_}-{hs}", "outcome": away_outcome}
-    return out
 
 
 def _sort_group(records: list[TeamRecord], results: list[dict]) -> list[TeamRecord]:
@@ -360,7 +340,6 @@ def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], pos_probs:
 def compute_state(results: list[dict], matches: list[dict] | None = None) -> dict:
     standings = build_standings(results)
     thirds = rank_thirds(standings)
-    last = last_results(results)
 
     pos_probs = {}
     if matches:
@@ -377,7 +356,6 @@ def compute_state(results: list[dict], matches: list[dict] | None = None) -> dic
             d = r.to_dict()
             current_pos = i + 1
             d["prob"] = round(team_probs.get(r.name, {}).get(current_pos, 0.0), 4)
-            d["last_result"] = last.get(r.name)
             rows.append(d)
         standings_payload[g] = rows
 
