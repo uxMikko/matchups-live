@@ -250,3 +250,48 @@ async def fetch_group_ranks() -> dict[str, int]:
             if rank is not None:
                 ranks[NAME_FROM_ESPN.get(name, name)] = int(rank)
     return ranks
+
+
+async def fetch_group_stage_results() -> tuple[list[dict], list[dict]]:
+    """
+    Single-pass fetch of every group-stage match's current result, in one
+    ESPN call rather than one call per match (which is what scrape_match()
+    does per-match and is too chatty for a periodic batch job). Returns
+    (results, live_matches): results is every match with a real score
+    (in-progress or finished), live_matches is the subset currently being
+    played, in the same shape redis_client.push_state() expects.
+    """
+    data = await _fetch_scoreboard(GROUP_STAGE_WINDOW)
+
+    results = []
+    live_matches = []
+    for event in data.get("events", []):
+        comp = event["competitions"][0]
+        note = comp.get("altGameNote", "")
+        m = re.search(r"Group ([A-L])\b", note)
+        if not m:
+            continue  # knockout-stage placeholder fixture, not group stage
+        group = m.group(1)
+
+        home_c = next(c for c in comp["competitors"] if c["homeAway"] == "home")
+        away_c = next(c for c in comp["competitors"] if c["homeAway"] == "away")
+        home = NAME_FROM_ESPN.get(home_c["team"]["displayName"], home_c["team"]["displayName"])
+        away = NAME_FROM_ESPN.get(away_c["team"]["displayName"], away_c["team"]["displayName"])
+
+        score = _score_from_event(event)
+        if score.home_score is None:
+            continue  # not started yet
+
+        results.append({
+            "home": home, "away": away, "group": group,
+            "home_score": score.home_score, "away_score": score.away_score,
+        })
+
+        if score.status in ("live", "ht"):
+            live_matches.append({
+                "home": home, "away": away,
+                "home_score": score.home_score, "away_score": score.away_score,
+                "minute": score.minute, "status": score.status, "group": group,
+            })
+
+    return results, live_matches
