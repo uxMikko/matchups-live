@@ -141,7 +141,6 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .prob-pill.partial { background: #ffedd5; color: #c2410c; }
 .prob-pill.certain { background: #dcfce7; color: #16a34a; }
 
-.standings-team .group-tag { color: #9aa0ad; font-weight: 500; font-size: 12px; flex-shrink: 0; }
 
 /* Coming soon */
 .coming-soon { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px 16px; text-align: center; color: var(--muted); }
@@ -494,7 +493,6 @@ function renderThirds(thirds) {
       <div class="standings-team">
         ${flagImg(t.name)}
         <span class="name">${t.name}</span>
-        <span class="group-tag">Grp ${t.group}</span>
       </div>
       <div class="standings-col">${t.played}</div>
       <div class="standings-col">${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</div>
