@@ -7,16 +7,16 @@
 <meta name="description" content="Live Round of 32 bracket for FIFA World Cup 2026. Auto-updates on every goal. Group standings with qualification line and finish probabilities.">
 <style>
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d26;
-  --border: #2a2d3a;
-  --text: #e8eaf0;
-  --muted: #7a7f96;
-  --green: #22c55e;
-  --amber: #f59e0b;
-  --red: #ef4444;
-  --blue: #3b82f6;
-  --pulse: #f59e0b;
+  --bg: #ffffff;
+  --surface: #f4f4f6;
+  --border: #e3e3e6;
+  --text: #15151a;
+  --muted: #6b7280;
+  --green: #16a34a;
+  --amber: #c2750f;
+  --red: #dc2626;
+  --blue: #2563eb;
+  --pulse: #c2750f;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.5; }
@@ -63,6 +63,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
   border: 1px solid #e3e3e6;
   border-radius: 10px;
   padding: 10px 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   transition: box-shadow 0.3s;
 }
 .tie-card.just-updated {
@@ -88,7 +89,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .groups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 520px) { .groups-grid { grid-template-columns: 1fr; } }
 
-.group-card { background: #fff; color: #15151a; border-radius: 10px; overflow: hidden; }
+.group-card { background: #fff; color: #15151a; border: 1px solid #e3e3e6; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .group-head { display: flex; align-items: center; gap: 8px; background: #14141a; color: #fff; padding: 8px 10px; font-size: 11px; font-weight: 700; }
 .group-head .gh-name { flex: 1; }
 .gh-col { width: 30px; text-align: center; color: #9aa0ad; font-weight: 600; flex-shrink: 0; }
@@ -116,7 +117,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 
 /* Thirds race */
 .thirds-list { display: flex; flex-direction: column; gap: 8px; }
-.third-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fff; color: #15151a; border-radius: 8px; font-size: 13px; }
+.third-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fff; color: #15151a; border: 1px solid #e3e3e6; border-radius: 8px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .third-rank { width: 22px; font-size: 13px; font-weight: 800; text-align: center; }
 .third-row.qualifies .third-rank { color: #c2750f; }
 .third-row.out .third-rank { color: #9aa0ad; }
