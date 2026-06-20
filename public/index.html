@@ -53,9 +53,18 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .live-teams { flex: 1; }
 .live-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-/* Bracket */
-.bracket-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-@media (max-width: 480px) { .bracket-grid { grid-template-columns: 1fr; } }
+/* Bracket tree: column 1 = the 16 real R32 matches (one per row), columns
+   2-5 = TBD placeholders for R16/QF/SF/Final, each centered across the rows
+   of its two feeder matches via CSS grid row-spanning. */
+.bracket-tree-wrap { overflow-x: auto; padding-bottom: 8px; }
+.bracket-tree {
+  display: grid;
+  grid-template-columns: 230px 160px 160px 150px 150px;
+  grid-template-rows: 22px repeat(16, 92px);
+  gap: 8px 16px;
+  min-width: 920px;
+}
+.round-title { grid-row: 1; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; text-align: center; align-self: center; }
 
 .tie-card {
   background: #fff;
@@ -65,6 +74,8 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
   padding: 10px 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   transition: box-shadow 0.3s;
+  grid-column: 1;
+  align-self: stretch;
 }
 .tie-card.just-updated {
   animation: pulse-border 2s ease-out;
@@ -84,6 +95,18 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .team-prob-pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; flex-shrink: 0; }
 .team-prob-pill.orange { background: #ffd9b8; color: #cd7221; }
 .team-prob-pill.green { background: #c1eec6; color: #4aa250; }
+
+.tbd-card {
+  background: #f4f4f6;
+  border: 1px dashed #d7d7db;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  align-self: center;
+  justify-self: stretch;
+}
+.tbd-card .match-num { color: var(--muted); }
+.tbd-card .tbd-label { font-size: 11px; color: #b4b8c2; font-weight: 600; margin-top: 4px; }
 
 /* Standings */
 .groups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -107,9 +130,10 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .move-arrow.down { color: #dc2626; }
 .result-pill { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 8px; flex-shrink: 0; }
 .result-pill.w { background: #dcfce7; color: #16a34a; }
-.result-pill.l { background: #fee2e2; color: #dc2626; }
+.result-pill.l { background: #fde8e8; color: #b3514a; }
 .result-pill.d { background: #ececef; color: #52525b; }
-.result-pill.live { background: #fee2e2; color: #dc2626; animation: pulse-red 1.5s infinite; }
+.result-pill.live { background: var(--red); color: #fff; display: inline-flex; align-items: center; gap: 4px; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: pulse-red 1.2s infinite; }
 .standings-col { width: 30px; text-align: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
 .prob-pill { width: 42px; text-align: center; font-size: 11px; font-weight: 700; padding: 3px 0; border-radius: 8px; flex-shrink: 0; }
 .prob-pill.partial { background: #ffedd5; color: #c2410c; }
@@ -148,11 +172,13 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
     <div id="live-matches-container"></div>
   </div>
 
-  <!-- ROUND OF 32 -->
+  <!-- BRACKET -->
   <div class="section">
-    <div class="section-title">Round of 32 — Bracket Projection</div>
+    <div class="section-title">Knockout Bracket — Matches 73–104</div>
     <div id="bracket-spinner" class="spinner">Loading bracket…</div>
-    <div id="bracket-grid" class="bracket-grid" style="display:none"></div>
+    <div class="bracket-tree-wrap">
+      <div id="bracket-grid" class="bracket-tree" style="display:none"></div>
+    </div>
   </div>
 
   <!-- GROUP STANDINGS -->
@@ -251,6 +277,17 @@ function teamRow(t, variant) {
   </div>`;
 }
 
+// Later rounds (R16/QF/SF/Final) have no real data yet — they depend on
+// actual R32 results. These are pure TBD placeholders sized/positioned to
+// show the correct bracket tree shape (each slot spans its two feeders),
+// not a claim about which specific teams will meet.
+const PLACEHOLDER_ROUNDS = [
+  { round: 2, count: 8, title: "Round of 16", startNum: 89 },
+  { round: 3, count: 4, title: "Quarterfinals", startNum: 97 },
+  { round: 4, count: 2, title: "Semifinals", startNum: 101 },
+  { round: 5, count: 1, title: "Final", startNum: 104 },
+];
+
 function renderBracket(bracket) {
   const grid = document.getElementById("bracket-grid");
   const spinner = document.getElementById("bracket-spinner");
@@ -261,13 +298,14 @@ function renderBracket(bracket) {
   spinner.style.display = "none";
   grid.style.display = "grid";
 
-  grid.innerHTML = bracket.map((m, i) => {
+  let html = `<div class="round-title" style="grid-column:1">Round of 32</div>`;
+  html += bracket.map((m, i) => {
     const isUpdated = updatedSlots.has(m.slot);
     const matchProb = m.prob != null ? `${m.prob}%` : "–";
     return `
-    <div class="tie-card${isUpdated ? " just-updated" : ""}">
+    <div class="tie-card${isUpdated ? " just-updated" : ""}" style="grid-row:${i + 2}">
       <div class="tie-top">
-        <span class="match-num">${i + 1}</span>
+        <span class="match-num">${m.match_number ?? i + 73}</span>
         <span class="match-prob-pill">${matchProb}</span>
         ${isUpdated ? '<span class="updating-badge">🔴 UPDATING</span>' : ''}
       </div>
@@ -275,6 +313,20 @@ function renderBracket(bracket) {
       ${teamRow(m.away, "away")}
     </div>`;
   }).join("");
+
+  for (const r of PLACEHOLDER_ROUNDS) {
+    const groupSize = Math.pow(2, r.round - 1);
+    html += `<div class="round-title" style="grid-column:${r.round}">${r.title}</div>`;
+    for (let i = 1; i <= r.count; i++) {
+      const rowStart = (i - 1) * groupSize + 2;
+      html += `<div class="tbd-card" style="grid-column:${r.round};grid-row:${rowStart} / span ${groupSize}">
+        <span class="match-num">${r.startNum + i - 1}</span>
+        <div class="tbd-label">TBD</div>
+      </div>`;
+    }
+  }
+
+  grid.innerHTML = html;
 }
 
 // ── STANDINGS ─────────────────────────────────────────────────────────────────
@@ -307,7 +359,7 @@ function renderStandings(standings, liveMatches) {
 
       let resultPill = "";
       if (liveByTeam[t.name]) {
-        resultPill = `<span class="result-pill live">${liveByTeam[t.name]}</span>`;
+        resultPill = `<span class="result-pill live"><span class="live-dot"></span>${liveByTeam[t.name]}</span>`;
       } else if (t.last_result) {
         const cls = t.last_result.outcome === "W" ? "w" : t.last_result.outcome === "L" ? "l" : "d";
         resultPill = `<span class="result-pill ${cls}">${t.last_result.score}</span>`;

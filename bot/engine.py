@@ -253,6 +253,17 @@ def thirds_race_payload(thirds: list[tuple[str, TeamRecord]]) -> list[dict]:
 SEED_LABELS = {1: "1", 2: "2", 3: "3"}
 ANNEX_SLOT_WEIGHT = 1 / 8  # placeholder: uniform odds across the 8 third-place slots
 
+# Real FIFA match numbers (73-88) for each R32 slot, verified against the
+# official pairing reported by worldcupwiki.com — cross-checked against our
+# own FIXED_R32 + THIRD_SLOTS group/position composition for every slot
+# (every pairing matched exactly). Group-stage matches are 1-72, so R32 is
+# 73-88, R16 89-96, QF 97-100, SF 101-102, 3rd-place 103, Final 104.
+MATCH_NUMBERS: dict[str, int] = {
+    "R1": 73, "RE": 74, "R3": 75, "R2": 76, "RI": 77, "R6": 78,
+    "RA": 79, "RL": 80, "RD": 81, "RG": 82, "R7": 83, "R4": 84,
+    "RB": 85, "R5": 86, "RK": 87, "R8": 88,
+}
+
 
 def project_bracket(standings: dict[str, list[TeamRecord]], pos_probs: dict | None = None) -> list[dict]:
     """Project all 16 R32 matches from current standings."""
@@ -274,6 +285,7 @@ def project_bracket(standings: dict[str, list[TeamRecord]], pos_probs: dict | No
         away = _team_entry(t2, g2, p2, pos_probs)
         matches.append({
             "slot": slot_def["slot"],
+            "match_number": MATCH_NUMBERS[slot_def["slot"]],
             "home": home,
             "away": away,
             "type": "runner_v_runner" if p1 == 2 and p2 == 2 else "winner_v_runner",
@@ -287,14 +299,17 @@ def project_bracket(standings: dict[str, list[TeamRecord]], pos_probs: dict | No
         third = third_by_group.get(src_group) if src_group else None
         home = _team_entry(winner, slot_letter, 1, pos_probs)
         away = _third_entry(third, src_group, pos_probs) if third else {"label": f"3rd Grp {src_group or '?'}", "team": None, "prob": 0}
+        slot = f"R{slot_letter}"
         matches.append({
-            "slot": f"R{slot_letter}",
+            "slot": slot,
+            "match_number": MATCH_NUMBERS[slot],
             "home": home,
             "away": away,
             "type": "winner_v_third",
             "prob": _combined_prob(home, away),
         })
 
+    matches.sort(key=lambda m: m["match_number"])
     return matches
 
 
