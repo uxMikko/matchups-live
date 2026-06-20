@@ -257,9 +257,14 @@ async def fetch_group_stage_results() -> tuple[list[dict], list[dict]]:
     Single-pass fetch of every group-stage match's current result, in one
     ESPN call rather than one call per match (which is what scrape_match()
     does per-match and is too chatty for a periodic batch job). Returns
-    (results, live_matches): results is every match with a real score
-    (in-progress or finished), live_matches is the subset currently being
-    played, in the same shape redis_client.push_state() expects.
+    (results, live_matches): results is every *finished* match only —
+    standings/bracket are cached and refreshed on a slow cron, so they must
+    only reflect settled results, never a live partial score (the frontend
+    overlays live_matches onto the cached standings itself, fetched directly
+    from a separate fast per-request endpoint — see netlify/functions/live.js
+    — so there's no double-counting between the two paths). live_matches is
+    every match currently being played, in the shape redis_client.push_state()
+    expects.
     """
     data = await _fetch_scoreboard(GROUP_STAGE_WINDOW)
 
@@ -282,12 +287,12 @@ async def fetch_group_stage_results() -> tuple[list[dict], list[dict]]:
         if score.home_score is None:
             continue  # not started yet
 
-        results.append({
-            "home": home, "away": away, "group": group,
-            "home_score": score.home_score, "away_score": score.away_score,
-        })
-
-        if score.status in ("live", "ht"):
+        if score.status == "ft":
+            results.append({
+                "home": home, "away": away, "group": group,
+                "home_score": score.home_score, "away_score": score.away_score,
+            })
+        elif score.status in ("live", "ht"):
             live_matches.append({
                 "home": home, "away": away,
                 "home_score": score.home_score, "away_score": score.away_score,

@@ -228,6 +228,69 @@ let prevBracket = null;
 let prevPositions = {};
 const updatedSlots = new Set();
 
+// cron-cached, finished-matches-only state (standings/bracket/thirds) —
+// refreshed slowly since it only changes when a match actually ends.
+let cachedState = { standings: {}, bracket: [], thirds_race: [], last_updated: null };
+
+// fetched directly from ESPN on every poll, bypassing the cron entirely —
+// this is what makes the live score/clock feel actually live.
+let liveMatches = [];
+const liveTickers = {}; // matchKey -> {baseMinute, fetchedAtMs, status, label}
+
+function matchKey(m) { return `${m.home}_${m.away}`; }
+
+function parseMinute(label) {
+  const m = String(label || "").match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// Ticks the displayed minute forward locally between polls (every poll
+// resyncs to ESPN's real value), so the clock never visibly freezes even
+// though the live endpoint is only fetched every ~15s.
+function tickingMinuteLabel(m) {
+  const t = liveTickers[matchKey(m)];
+  if (!t || t.status !== "live" || t.baseMinute == null) return m.minute || "–";
+  const elapsedMin = Math.floor((Date.now() - t.fetchedAtMs) / 60000);
+  return `${t.baseMinute + elapsedMin}'`;
+}
+
+// Overlays the live in-progress score onto the cached (finished-matches-
+// only) standings and re-sorts just the affected groups, so positions/
+// points update immediately rather than waiting for the match to end and
+// the cron to catch up. Tiebreaks beyond points/GD/GF (official rank,
+// fair play) aren't applied here — acceptable for a transient live
+// preview that gets superseded by the real backend computation once the
+// match finishes.
+function applyLiveOverlay(standings, liveMatches) {
+  if (!liveMatches || liveMatches.length === 0) return standings;
+  const out = {};
+  for (const g of Object.keys(standings)) out[g] = standings[g].map(t => ({ ...t }));
+
+  for (const m of liveMatches) {
+    const teams = out[m.group];
+    if (!teams) continue;
+    const home = teams.find(t => t.name === m.home);
+    const away = teams.find(t => t.name === m.away);
+    if (!home || !away) continue;
+
+    home.played += 1; away.played += 1;
+    home.goals_for += m.home_score; home.goals_against += m.away_score;
+    away.goals_for += m.away_score; away.goals_against += m.home_score;
+    if (m.home_score > m.away_score) { home.won += 1; away.lost += 1; }
+    else if (m.home_score === m.away_score) { home.drawn += 1; away.drawn += 1; }
+    else { away.won += 1; home.lost += 1; }
+    home.points = home.won * 3 + home.drawn;
+    away.points = away.won * 3 + away.drawn;
+    home.goal_diff = home.goals_for - home.goals_against;
+    away.goal_diff = away.goals_for - away.goals_against;
+
+    out[m.group] = teams.slice().sort((a, b) =>
+      b.points - a.points || b.goal_diff - a.goal_diff || b.goals_for - a.goals_for
+    );
+  }
+  return out;
+}
+
 // ── LIVE STRIP ────────────────────────────────────────────────────────────────
 function renderLive(liveMatches) {
   const strip = document.getElementById("live-strip");
@@ -242,7 +305,7 @@ function renderLive(liveMatches) {
       <span class="live-badge">LIVE</span>
       <div class="live-teams">
         <div class="live-score">${flagImg(m.home)} ${m.home_score ?? "–"}&ndash;${m.away_score ?? "–"} ${flagImg(m.away)}</div>
-        <div class="live-meta">Group ${m.group} &middot; ${m.minute || "–"}</div>
+        <div class="live-meta">Group ${m.group} &middot; ${tickingMinuteLabel(m)}</div>
       </div>
     </div>
   `).join("");
@@ -426,24 +489,72 @@ function renderLastUpdated(ts) {
 }
 
 // ── POLLING ───────────────────────────────────────────────────────────────────
+// Two independent loops: cachedState only changes when a match finishes
+// (cron-driven, can lag), so it's polled slowly. liveMatches comes straight
+// from ESPN on every call and drives the live banner, the standings
+// overlay, and the ticking clock — polled fast since that's the whole
+// point of bypassing the cron for it.
+// fetchState and fetchLive resolve independently — if either one rendered
+// on its own before the other ever loaded, the standings would render once
+// without the live overlay and once with it moments later, which the
+// move-arrow logic would misread as a real position change. So neither
+// renders until both have loaded at least once; after that, either one
+// triggers a normal re-render on its own.
+let stateLoadedOnce = false;
+let liveLoadedOnce = false;
+
+function renderAll() {
+  if (!stateLoadedOnce || !liveLoadedOnce) return;
+  renderLive(liveMatches);
+  renderBracket(cachedState.bracket);
+  renderStandings(applyLiveOverlay(cachedState.standings, liveMatches), liveMatches);
+  renderThirds(cachedState.thirds_race);
+  renderLastUpdated(cachedState.last_updated);
+}
+
 async function fetchState() {
   try {
     const res = await fetch("/api/state");
     if (!res.ok) return;
-    const data = await res.json();
-    renderLive(data.live_matches);
-    renderBracket(data.bracket);
-    renderStandings(data.standings, data.live_matches);
-    renderThirds(data.thirds_race);
-    renderLastUpdated(data.last_updated);
+    cachedState = await res.json();
+    stateLoadedOnce = true;
+    renderAll();
   } catch (e) {
-    console.error("fetch error:", e);
+    console.error("fetchState error:", e);
+  }
+}
+
+async function fetchLive() {
+  try {
+    const res = await fetch("/api/live");
+    if (!res.ok) return;
+    const data = await res.json();
+    liveMatches = data.live_matches || [];
+
+    const now = Date.now();
+    for (const m of liveMatches) {
+      liveTickers[matchKey(m)] = {
+        baseMinute: m.status === "live" ? parseMinute(m.minute) : null,
+        fetchedAtMs: now,
+        status: m.status,
+      };
+    }
+    for (const key of Object.keys(liveTickers)) {
+      if (!liveMatches.some(m => matchKey(m) === key)) delete liveTickers[key];
+    }
+    liveLoadedOnce = true;
+    renderAll();
+  } catch (e) {
+    console.error("fetchLive error:", e);
   }
 }
 
 fetchState();
-setInterval(fetchState, 30000);
-setInterval(() => renderLastUpdated(prevBracket ? Date.now()/1000 - 30 : null), 30000);
+fetchLive();
+setInterval(fetchState, 60000);
+setInterval(fetchLive, 15000);
+setInterval(() => renderLive(liveMatches), 1000); // local clock tick, no fetch
+setInterval(() => renderLastUpdated(cachedState.last_updated), 30000);
 </script>
 </body>
 </html>
