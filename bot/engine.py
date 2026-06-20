@@ -133,25 +133,21 @@ class TeamRecord:
 
 
 # ── STANDINGS ─────────────────────────────────────────────────────────────────
-def build_standings(results: list[dict]) -> dict[str, list[TeamRecord]]:
-    """
-    Build standings from a list of completed results.
-    results: [{home, away, group, home_score, away_score}, ...]
-    Returns {group: [TeamRecord sorted 1st→4th]}.
-    """
-    records: dict[str, dict[str, TeamRecord]] = {
-        g: {t: TeamRecord(name=t, group=g) for t in teams}
-        for g, teams in GROUPS.items()
-    }
-    group_results: dict[str, list[dict]] = {g: [] for g in GROUPS}
+def build_group_standings(group: str, results: list[dict]) -> list[TeamRecord]:
+    """Standings for a single group, given results filtered/unfiltered (results
+    not belonging to this group are ignored). Used directly by forecast.py to
+    re-sort many hypothetical result sets cheaply (without touching the other
+    11 groups each time)."""
+    teams = GROUPS[group]
+    records = {t: TeamRecord(name=t, group=group) for t in teams}
+    group_results = [r for r in results if r.get("group") == group]
 
-    for r in results:
-        g = r["group"]
+    for r in group_results:
         home, away = r["home"], r["away"]
-        hs, as_ = r.get("home_score", 0) or 0, r.get("away_score", 0) or 0
-        if g not in records or home not in records[g] or away not in records[g]:
+        if home not in records or away not in records:
             continue
-        h, a = records[g][home], records[g][away]
+        hs, as_ = r.get("home_score", 0) or 0, r.get("away_score", 0) or 0
+        h, a = records[home], records[away]
         h.played += 1; a.played += 1
         h.goals_for += hs; h.goals_against += as_
         a.goals_for += as_; a.goals_against += hs
@@ -161,13 +157,39 @@ def build_standings(results: list[dict]) -> dict[str, list[TeamRecord]]:
             h.drawn += 1; a.drawn += 1
         else:
             a.won += 1; h.lost += 1
-        group_results[g].append(r)
 
-    standings = {}
-    for g, team_map in records.items():
-        sorted_teams = _sort_group(list(team_map.values()), group_results[g])
-        standings[g] = sorted_teams
-    return standings
+    return _sort_group(list(records.values()), group_results)
+
+
+def build_standings(results: list[dict]) -> dict[str, list[TeamRecord]]:
+    """
+    Build standings from a list of completed results.
+    results: [{home, away, group, home_score, away_score}, ...]
+    Returns {group: [TeamRecord sorted 1st→4th]}.
+    """
+    return {g: build_group_standings(g, results) for g in GROUPS}
+
+
+def last_results(results: list[dict]) -> dict[str, dict]:
+    """{team: {"score": "1-0", "outcome": "W"/"D"/"L"}} for each team's most
+    recent result, taken from results' input order (results are appended
+    chronologically by the live pipeline). Placeholder for the standings
+    table's "last match" pill — not used for any tiebreak logic."""
+    out: dict[str, dict] = {}
+    for r in results:
+        hs, as_ = r.get("home_score"), r.get("away_score")
+        if hs is None or as_ is None:
+            continue
+        home, away = r["home"], r["away"]
+        if hs > as_:
+            home_outcome, away_outcome = "W", "L"
+        elif hs == as_:
+            home_outcome = away_outcome = "D"
+        else:
+            home_outcome, away_outcome = "L", "W"
+        out[home] = {"score": f"{hs}-{as_}", "outcome": home_outcome}
+        out[away] = {"score": f"{as_}-{hs}", "outcome": away_outcome}
+    return out
 
 
 def _sort_group(records: list[TeamRecord], results: list[dict]) -> list[TeamRecord]:
@@ -228,8 +250,13 @@ def thirds_race_payload(thirds: list[tuple[str, TeamRecord]]) -> list[dict]:
 
 
 # ── R32 BRACKET PROJECTION ────────────────────────────────────────────────────
-def project_bracket(standings: dict[str, list[TeamRecord]]) -> list[dict]:
+SEED_LABELS = {1: "1", 2: "2", 3: "3"}
+ANNEX_SLOT_WEIGHT = 1 / 8  # placeholder: uniform odds across the 8 third-place slots
+
+
+def project_bracket(standings: dict[str, list[TeamRecord]], pos_probs: dict | None = None) -> list[dict]:
     """Project all 16 R32 matches from current standings."""
+    pos_probs = pos_probs or {}
     thirds = rank_thirds(standings)
     qualifying_8 = {g for g, _ in thirds[:8]}
     annex = ac.lookup(qualifying_8)  # {slot: source_group}
@@ -243,11 +270,14 @@ def project_bracket(standings: dict[str, list[TeamRecord]]) -> list[dict]:
         g2, p2 = slot_def["t2"]["group"], slot_def["t2"]["pos"]
         t1 = _get_team(standings, g1, p1)
         t2 = _get_team(standings, g2, p2)
+        home = _team_entry(t1, g1, p1, pos_probs)
+        away = _team_entry(t2, g2, p2, pos_probs)
         matches.append({
             "slot": slot_def["slot"],
-            "home": _team_entry(t1, g1, p1),
-            "away": _team_entry(t2, g2, p2),
+            "home": home,
+            "away": away,
             "type": "runner_v_runner" if p1 == 2 and p2 == 2 else "winner_v_runner",
+            "prob": _combined_prob(home, away),
         })
 
     # Annex C: winner vs 3rd-place
@@ -255,14 +285,21 @@ def project_bracket(standings: dict[str, list[TeamRecord]]) -> list[dict]:
         src_group = annex.get(slot_letter)
         winner = _get_team(standings, slot_letter, 1)
         third = third_by_group.get(src_group) if src_group else None
+        home = _team_entry(winner, slot_letter, 1, pos_probs)
+        away = _third_entry(third, src_group, pos_probs) if third else {"label": f"3rd Grp {src_group or '?'}", "team": None, "prob": 0}
         matches.append({
             "slot": f"R{slot_letter}",
-            "home": _team_entry(winner, slot_letter, 1),
-            "away": _team_entry(third, src_group, 3) if third else {"label": f"3rd Grp {src_group or '?'}", "team": None},
+            "home": home,
+            "away": away,
             "type": "winner_v_third",
+            "prob": _combined_prob(home, away),
         })
 
     return matches
+
+
+def _combined_prob(home: dict, away: dict) -> float:
+    return round((home.get("prob", 0) or 0) * (away.get("prob", 0) or 0) * 100, 1)
 
 
 def _get_team(standings: dict, group: str, pos: int) -> Optional[TeamRecord]:
@@ -270,30 +307,67 @@ def _get_team(standings: dict, group: str, pos: int) -> Optional[TeamRecord]:
     return recs[pos - 1] if len(recs) >= pos else None
 
 
-def _team_entry(rec: Optional[TeamRecord], group: str, pos: int) -> dict:
+def _team_entry(rec: Optional[TeamRecord], group: str, pos: int, pos_probs: dict) -> dict:
     pos_labels = {1: "1st", 2: "2nd", 3: "3rd"}
     if rec:
+        prob = pos_probs.get(group, {}).get(rec.name, {}).get(pos, 0.0)
         return {
             "team": rec.name,
             "flag": FLAG_EMOJIS.get(rec.name, "🏳"),
             "label": f"{pos_labels.get(pos,'?')} Group {group}",
+            "seed": f"{SEED_LABELS.get(pos, pos)}{group}",
             "played": rec.played,
             "group": group,
             "pos": pos,
+            "prob": round(prob, 4),
         }
-    return {"team": None, "flag": "🏳", "label": f"{pos_labels.get(pos,'?')} Grp {group} TBD"}
+    return {"team": None, "flag": "🏳", "label": f"{pos_labels.get(pos,'?')} Grp {group} TBD",
+            "seed": f"{SEED_LABELS.get(pos, pos)}{group}", "prob": 0}
+
+
+def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], pos_probs: dict) -> dict:
+    if not rec or not src_group:
+        return {"team": None, "flag": "🏳", "label": "3rd TBD", "seed": "3?", "prob": 0}
+    third_prob = pos_probs.get(src_group, {}).get(rec.name, {}).get(3, 0.0)
+    return {
+        "team": rec.name,
+        "flag": FLAG_EMOJIS.get(rec.name, "🏳"),
+        "label": f"3rd Group {src_group}",
+        "seed": f"3{src_group}",
+        "played": rec.played,
+        "group": src_group,
+        "pos": 3,
+        "prob": round(third_prob * ANNEX_SLOT_WEIGHT, 4),
+    }
 
 
 # ── FULL STATE COMPUTATION ────────────────────────────────────────────────────
-def compute_state(results: list[dict]) -> dict:
+def compute_state(results: list[dict], matches: list[dict] | None = None) -> dict:
     standings = build_standings(results)
     thirds = rank_thirds(standings)
-    bracket = project_bracket(standings)
+    last = last_results(results)
+
+    pos_probs = {}
+    if matches:
+        import forecast
+        pos_probs = forecast.compute_all_probabilities(results, matches)
+
+    bracket = project_bracket(standings, pos_probs)
+
+    standings_payload = {}
+    for g, recs in standings.items():
+        team_probs = pos_probs.get(g, {})
+        rows = []
+        for i, r in enumerate(recs):
+            d = r.to_dict()
+            current_pos = i + 1
+            d["prob"] = round(team_probs.get(r.name, {}).get(current_pos, 0.0), 4)
+            d["last_result"] = last.get(r.name)
+            rows.append(d)
+        standings_payload[g] = rows
+
     return {
-        "standings": {
-            g: [r.to_dict() for r in recs]
-            for g, recs in standings.items()
-        },
+        "standings": standings_payload,
         "bracket": bracket,
         "thirds_race": thirds_race_payload(thirds),
     }

@@ -109,7 +109,7 @@ async def push_baseline():
     ]
 
     engine.OFFICIAL_RANKS = await scraper.fetch_group_ranks()
-    state = engine.compute_state(engine_results)
+    state = engine.compute_state(engine_results, scheduler.MATCHES)
     await rc.push_state(
         state["standings"],
         state["bracket"],
