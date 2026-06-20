@@ -53,8 +53,11 @@ async def handle_match_window(match: dict, db_path: str):
     if score:
         await _on_score(match, score, db_path)
 
-    # Poll every 30s looking for goals
-    last_score = (score.home_score, score.away_score) if score else (None, None)
+    # Poll every 30s looking for goals or status changes (e.g. halftime ->
+    # second half) — score alone isn't enough, since the ticker would
+    # otherwise sit frozen on "Halftime" through the entire second half
+    # whenever no further goals are scored.
+    last_state = (score.home_score, score.away_score, score.status) if score else (None, None, None)
     elapsed = 60
 
     while elapsed < 105:  # minimum match duration
@@ -62,11 +65,14 @@ async def handle_match_window(match: dict, db_path: str):
         elapsed += 0.5
         score = await scraper.scrape_match(home, away, kickoff)
         if score:
-            current = (score.home_score, score.away_score)
-            if current != last_score:
-                log.info(f"Goal! {home} {current[0]}-{current[1]} {away}")
+            current = (score.home_score, score.away_score, score.status)
+            if current != last_state:
+                if current[:2] != last_state[:2]:
+                    log.info(f"Goal! {home} {current[0]}-{current[1]} {away}")
+                else:
+                    log.info(f"Status change: {home} vs {away} -> {score.status}")
                 await _on_score(match, score, db_path)
-                last_score = current
+                last_state = current
 
     # Now poll actively for FT
     final = await scraper.wait_for_fulltime(home, away, kickoff, kickoff_plus=105)
