@@ -88,7 +88,8 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .tie-top { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid #ececef; margin-bottom: 8px; }
 .match-num { font-size: 13px; font-weight: 800; color: #15151a; }
 .match-prob-pill { background: #f8dbd0; color: #a32828; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; }
-.updating-badge { font-size: 10px; color: var(--pulse); font-weight: 700; margin-left: auto; }
+.match-date { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.updating-badge { font-size: 10px; color: var(--pulse); font-weight: 700; }
 .tie-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 13px; font-weight: 600; }
 .tie-team .seed { font-size: 10px; font-weight: 700; color: #9aa0ad; width: 16px; flex-shrink: 0; }
 .tie-team .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -339,6 +340,15 @@ function teamRow(t, variant) {
   </div>`;
 }
 
+// Browser's own locale + timezone — no timeZone option means it converts
+// from the UTC kickoff to whatever local time the viewer's device is set to.
+function formatKickoff(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 // Later rounds (R16/QF/SF/Final) have no real data yet — they depend on
 // actual R32 results. These are pure TBD placeholders sized/positioned to
 // show the correct bracket tree shape (each slot spans its two feeders),
@@ -369,6 +379,7 @@ function renderBracket(bracket) {
       <div class="tie-top">
         <span class="match-num">${m.match_number ?? i + 73}</span>
         <span class="match-prob-pill">${matchProb}</span>
+        <span class="match-date">${formatKickoff(m.kickoff)}</span>
         ${isUpdated ? '<span class="updating-badge">🔴 UPDATING</span>' : ''}
       </div>
       ${teamRow(m.home, "home")}

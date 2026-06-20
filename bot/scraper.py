@@ -216,6 +216,52 @@ async def fetch_group_stage_matches() -> list[dict]:
     return matches
 
 
+# Real Round of 32 kickoff window (the group stage one above ends too early
+# — R32 runs June 28 - July 3). ESPN already carries placeholder fixtures
+# for these (teams not yet determined, but real scheduled date/time) with
+# the placeholder description as the team displayName (e.g. "Group A 2nd
+# Place"), keyed here as "{home} vs {away}", verified by cross-checking
+# every one against our own FIXED_R32/THIRD_SLOTS composition in engine.py
+# — every slot matched exactly. Interesting detail confirmed by ESPN's own
+# data: the two host-nation slots (Group A and Group D winners) are named
+# "Mexico" and "United States" directly rather than "Group A Winner" /
+# "Group D Winner", presumably because hosts get a fixed bracket seed.
+R32_WINDOW = "20260628-20260704"
+R32_NOTE_TO_SLOT = {
+    "Group A 2nd Place vs Group B 2nd Place": "R1",
+    "Group C Winner vs Group F 2nd Place": "R2",
+    "Group F Winner vs Group C 2nd Place": "R3",
+    "Group H Winner vs Group J 2nd Place": "R4",
+    "Group J Winner vs Group H 2nd Place": "R5",
+    "Group E 2nd Place vs Group I 2nd Place": "R6",
+    "Group K 2nd Place vs Group L 2nd Place": "R7",
+    "Group D 2nd Place vs Group G 2nd Place": "R8",
+    "Mexico vs Third Place Group C/E/F/H/I": "RA",
+    "Group B Winner vs Third Place Group E/F/G/I/J": "RB",
+    "United States vs Third Place Group B/E/F/I/J": "RD",
+    "Group E Winner vs Third Place Group A/B/C/D/F": "RE",
+    "Group G Winner vs Third Place Group A/E/H/I/J": "RG",
+    "Group I Winner vs Third Place Group C/D/F/G/H": "RI",
+    "Group K Winner vs Third Place Group D/E/I/J/L": "RK",
+    "Group L Winner vs Third Place Group E/H/I/J/K": "RL",
+}
+
+
+async def fetch_r32_kickoffs() -> dict[str, str]:
+    """{slot: kickoff ISO datetime (UTC)} for each of the 16 R32 slots."""
+    data = await _fetch_scoreboard(R32_WINDOW)
+    kickoffs: dict[str, str] = {}
+    for event in data.get("events", []):
+        comp = event["competitions"][0]
+        home_c = next(c for c in comp["competitors"] if c["homeAway"] == "home")
+        away_c = next(c for c in comp["competitors"] if c["homeAway"] == "away")
+        key = f"{home_c['team']['displayName']} vs {away_c['team']['displayName']}"
+        slot = R32_NOTE_TO_SLOT.get(key)
+        if slot:
+            kickoffs[slot] = comp["date"]
+    return kickoffs
+
+
 STANDINGS_URL = "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings"
 
 

@@ -35,9 +35,10 @@ log = logging.getLogger("refresh")
 async def main():
     results, live_matches = await scraper.fetch_group_stage_results()
     matches = await scraper.fetch_group_stage_matches()
+    r32_kickoffs = await scraper.fetch_r32_kickoffs()
     engine.OFFICIAL_RANKS = await scraper.fetch_group_ranks()
 
-    state = engine.compute_state(results, matches)
+    state = engine.compute_state(results, matches, r32_kickoffs)
     await rc.push_state(
         state["standings"],
         state["bracket"],

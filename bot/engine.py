@@ -245,9 +245,14 @@ MATCH_NUMBERS: dict[str, int] = {
 }
 
 
-def project_bracket(standings: dict[str, list[TeamRecord]], pos_probs: dict | None = None) -> list[dict]:
+def project_bracket(
+    standings: dict[str, list[TeamRecord]],
+    pos_probs: dict | None = None,
+    r32_kickoffs: dict | None = None,
+) -> list[dict]:
     """Project all 16 R32 matches from current standings."""
     pos_probs = pos_probs or {}
+    r32_kickoffs = r32_kickoffs or {}
     thirds = rank_thirds(standings)
     qualifying_8 = {g for g, _ in thirds[:8]}
     annex = ac.lookup(qualifying_8)  # {slot: source_group}
@@ -266,6 +271,7 @@ def project_bracket(standings: dict[str, list[TeamRecord]], pos_probs: dict | No
         matches.append({
             "slot": slot_def["slot"],
             "match_number": MATCH_NUMBERS[slot_def["slot"]],
+            "kickoff": r32_kickoffs.get(slot_def["slot"]),
             "home": home,
             "away": away,
             "type": "runner_v_runner" if p1 == 2 and p2 == 2 else "winner_v_runner",
@@ -283,6 +289,7 @@ def project_bracket(standings: dict[str, list[TeamRecord]], pos_probs: dict | No
         matches.append({
             "slot": slot,
             "match_number": MATCH_NUMBERS[slot],
+            "kickoff": r32_kickoffs.get(slot),
             "home": home,
             "away": away,
             "type": "winner_v_third",
@@ -337,7 +344,11 @@ def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], pos_probs:
 
 
 # ── FULL STATE COMPUTATION ────────────────────────────────────────────────────
-def compute_state(results: list[dict], matches: list[dict] | None = None) -> dict:
+def compute_state(
+    results: list[dict],
+    matches: list[dict] | None = None,
+    r32_kickoffs: dict | None = None,
+) -> dict:
     standings = build_standings(results)
     thirds = rank_thirds(standings)
 
@@ -346,7 +357,7 @@ def compute_state(results: list[dict], matches: list[dict] | None = None) -> dic
         import forecast
         pos_probs = forecast.compute_all_probabilities(results, matches)
 
-    bracket = project_bracket(standings, pos_probs)
+    bracket = project_bracket(standings, pos_probs, r32_kickoffs)
 
     standings_payload = {}
     for g, recs in standings.items():
