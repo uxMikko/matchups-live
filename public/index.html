@@ -48,6 +48,8 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
   gap: 12px;
 }
 .live-badge { background: var(--red); color: white; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; animation: pulse-red 1.5s infinite; }
+.live-match-card.finished { border-left-color: var(--muted); }
+.live-badge.finished { background: var(--muted); animation: none; }
 @keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:.5} }
 .live-score { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
 .live-teams { flex: 1; }
@@ -168,7 +170,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 
   <!-- LIVE STRIP -->
   <div id="live-strip" class="section">
-    <div class="section-title">🔴 Live Now</div>
+    <div class="section-title" id="live-section-title">🔴 Live Now</div>
     <div id="live-matches-container"></div>
   </div>
 
@@ -246,10 +248,15 @@ function parseMinute(label) {
 
 // Ticks the displayed minute forward locally between polls (every poll
 // resyncs to ESPN's real value), so the clock never visibly freezes even
-// though the live endpoint is only fetched every ~15s.
+// though the live endpoint is only fetched every ~15s. Stoppage time
+// ("45'+3'", "90'+6'") isn't extrapolated — there's no way to know how
+// much added time the referee will give, so once it appears we just show
+// ESPN's own latest value verbatim until the next poll updates it, rather
+// than silently dropping the "+X" and free-running the minute past 90.
 function tickingMinuteLabel(m) {
   const t = liveTickers[matchKey(m)];
   if (!t || t.status !== "live" || t.baseMinute == null) return m.minute || "–";
+  if (t.hasStoppage) return t.rawLabel || m.minute || "–";
   const elapsedMin = Math.floor((Date.now() - t.fetchedAtMs) / 60000);
   return `${t.baseMinute + elapsedMin}'`;
 }
@@ -294,21 +301,28 @@ function applyLiveOverlay(standings, liveMatches) {
 // ── LIVE STRIP ────────────────────────────────────────────────────────────────
 function renderLive(liveMatches) {
   const strip = document.getElementById("live-strip");
+  const title = document.getElementById("live-section-title");
   const container = document.getElementById("live-matches-container");
   if (!liveMatches || liveMatches.length === 0) {
     strip.style.display = "none";
     return;
   }
   strip.style.display = "block";
-  container.innerHTML = liveMatches.map(m => `
-    <div class="live-match-card">
-      <span class="live-badge">LIVE</span>
+  title.textContent = liveMatches.some(m => m.status !== "ft") ? "🔴 Live Now" : "Just Finished";
+  container.innerHTML = liveMatches.map(m => {
+    const isFinished = m.status === "ft";
+    const badge = isFinished
+      ? '<span class="live-badge finished">FULL TIME</span>'
+      : '<span class="live-badge">LIVE</span>';
+    return `
+    <div class="live-match-card${isFinished ? " finished" : ""}">
+      ${badge}
       <div class="live-teams">
         <div class="live-score">${flagImg(m.home)} ${m.home_score ?? "–"}&ndash;${m.away_score ?? "–"} ${flagImg(m.away)}</div>
         <div class="live-meta">Group ${m.group} &middot; ${tickingMinuteLabel(m)}</div>
       </div>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
 }
 
 // ── BRACKET ───────────────────────────────────────────────────────────────────
@@ -513,11 +527,27 @@ function renderLastUpdated(ts) {
 let stateLoadedOnce = false;
 let liveLoadedOnce = false;
 
+// /api/live also returns matches that finished recently (status "ft"), so
+// the banner doesn't vanish the instant the final whistle blows. But those
+// must NOT feed the standings overlay — once the cron's next tick picks a
+// finished match up into cachedState, overlaying it again here would
+// double-count it. Only genuinely in-progress matches go into the overlay;
+// the banner prefers in-progress, falling back to recently-finished ones
+// only when nothing is currently live.
+function inProgressMatches(matches) {
+  return matches.filter(m => m.status === "live" || m.status === "ht");
+}
+function bannerMatches(matches) {
+  const active = inProgressMatches(matches);
+  return active.length > 0 ? active : matches.filter(m => m.status === "ft");
+}
+
 function renderAll() {
   if (!stateLoadedOnce || !liveLoadedOnce) return;
-  renderLive(liveMatches);
+  const active = inProgressMatches(liveMatches);
+  renderLive(bannerMatches(liveMatches));
   renderBracket(cachedState.bracket);
-  renderStandings(applyLiveOverlay(cachedState.standings, liveMatches), liveMatches);
+  renderStandings(applyLiveOverlay(cachedState.standings, active), active);
   renderThirds(cachedState.thirds_race);
   renderLastUpdated(cachedState.last_updated);
 }
@@ -545,6 +575,8 @@ async function fetchLive() {
     for (const m of liveMatches) {
       liveTickers[matchKey(m)] = {
         baseMinute: m.status === "live" ? parseMinute(m.minute) : null,
+        hasStoppage: /\+/.test(m.minute || ""),
+        rawLabel: m.minute,
         fetchedAtMs: now,
         status: m.status,
       };

@@ -27,6 +27,13 @@ function statusFrom(type) {
   return "unknown";
 }
 
+// A finished match still gets returned (as status "ft") for a while after
+// the final whistle, so the frontend doesn't make it vanish instantly —
+// it keeps showing the final score until either a new match goes live or
+// this window passes. ~200min covers full match + stoppage + a real
+// post-match window even for a match that ran long.
+const FT_DISPLAY_WINDOW_MS = 200 * 60 * 1000;
+
 export async function handler() {
   try {
     const res = await fetch(`${SCOREBOARD_URL}?dates=${GROUP_STAGE_WINDOW}`);
@@ -43,7 +50,8 @@ export async function handler() {
       const awayC = comp.competitors.find((c) => c.homeAway === "away");
       const statusType = comp.status.type;
       const status = statusFrom(statusType);
-      if (status !== "live" && status !== "ht") continue;
+      if (status !== "live" && status !== "ht" && status !== "ft") continue;
+      if (status === "ft" && Date.now() - new Date(comp.date).getTime() > FT_DISPLAY_WINDOW_MS) continue;
 
       live.push({
         home: teamName(homeC.team.displayName),
