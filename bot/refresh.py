@@ -20,7 +20,9 @@ for var in ("UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"):
         print(f"ERROR: {var} not set.", file=sys.stderr)
         sys.exit(1)
 
+import elo
 import engine
+import forecast
 import redis_client as rc
 import scraper
 
@@ -37,6 +39,7 @@ async def main():
     matches = await scraper.fetch_group_stage_matches()
     r32_kickoffs = await scraper.fetch_r32_kickoffs()
     engine.OFFICIAL_RANKS = await scraper.fetch_group_ranks()
+    forecast.ELO_RATINGS = await elo.fetch_elo_ratings()
 
     state = engine.compute_state(results, matches, r32_kickoffs)
     await rc.push_state(

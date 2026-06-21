@@ -116,6 +116,21 @@ class TeamRecord:
             OFFICIAL_RANKS.get(self.name) or FIFA_RANKINGS.get(self.name, 999),
         )
 
+    def cross_group_sort_key(self) -> tuple:
+        """Like sort_key(), but for comparing teams from *different* groups
+        (the third-place race, and the joint qualification simulation).
+        OFFICIAL_RANKS is ESPN's within-group rank (1-4) — reused across
+        groups it collides constantly (every group has a "2nd"), creating
+        false ties between unrelated teams. FIFA_RANKINGS is unique 1-48
+        across every team, so it's the only valid tiebreaker here."""
+        return (
+            -self.points,
+            -self.goal_diff,
+            -self.goals_for,
+            self.fair_play,
+            FIFA_RANKINGS.get(self.name, 999),
+        )
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -213,12 +228,12 @@ def _break_h2h(tied: list[TeamRecord], results: list[dict]) -> list[TeamRecord]:
 # ── THIRD-PLACE RANKING ───────────────────────────────────────────────────────
 def rank_thirds(standings: dict[str, list[TeamRecord]]) -> list[tuple[str, TeamRecord]]:
     thirds = [(g, recs[2]) for g, recs in standings.items() if len(recs) >= 3]
-    thirds.sort(key=lambda x: x[1].sort_key())
+    thirds.sort(key=lambda x: x[1].cross_group_sort_key())
     return thirds  # index 0 = best third, index 7 = 8th (last qualifier)
 
 
-def thirds_race_payload(thirds: list[tuple[str, TeamRecord]], pos_probs: dict | None = None) -> list[dict]:
-    pos_probs = pos_probs or {}
+def thirds_race_payload(thirds: list[tuple[str, TeamRecord]], thirds_qualify: dict | None = None) -> list[dict]:
+    thirds_qualify = thirds_qualify or {}
     out = []
     for i, (g, rec) in enumerate(thirds):
         d = rec.to_dict()
@@ -226,7 +241,7 @@ def thirds_race_payload(thirds: list[tuple[str, TeamRecord]], pos_probs: dict | 
         d["rank"] = i + 1
         d["qualifies"] = i < 8
         d["cutoff"] = i == 7  # marks the 8th/9th boundary
-        d["prob"] = round(pos_probs.get(g, {}).get(rec.name, {}).get(3, 0.0), 4)
+        d["prob"] = round(thirds_qualify.get(rec.name, 0.0), 4)
         out.append(d)
     return out
 
@@ -251,10 +266,12 @@ def project_bracket(
     standings: dict[str, list[TeamRecord]],
     pos_probs: dict | None = None,
     r32_kickoffs: dict | None = None,
+    thirds_qualify: dict | None = None,
 ) -> list[dict]:
     """Project all 16 R32 matches from current standings."""
     pos_probs = pos_probs or {}
     r32_kickoffs = r32_kickoffs or {}
+    thirds_qualify = thirds_qualify or {}
     thirds = rank_thirds(standings)
     qualifying_8 = {g for g, _ in thirds[:8]}
     annex = ac.lookup(qualifying_8)  # {slot: source_group}
@@ -277,7 +294,6 @@ def project_bracket(
             "home": home,
             "away": away,
             "type": "runner_v_runner" if p1 == 2 and p2 == 2 else "winner_v_runner",
-            "prob": _combined_prob(home, away),
         })
 
     # Annex C: winner vs 3rd-place
@@ -286,7 +302,7 @@ def project_bracket(
         winner = _get_team(standings, slot_letter, 1)
         third = third_by_group.get(src_group) if src_group else None
         home = _team_entry(winner, slot_letter, 1, pos_probs)
-        away = _third_entry(third, src_group, pos_probs) if third else {"label": f"3rd Grp {src_group or '?'}", "team": None, "prob": 0}
+        away = _third_entry(third, src_group, thirds_qualify) if third else {"label": f"3rd Grp {src_group or '?'}", "team": None, "prob": 0}
         slot = f"R{slot_letter}"
         matches.append({
             "slot": slot,
@@ -295,15 +311,10 @@ def project_bracket(
             "home": home,
             "away": away,
             "type": "winner_v_third",
-            "prob": _combined_prob(home, away),
         })
 
     matches.sort(key=lambda m: m["match_number"])
     return matches
-
-
-def _combined_prob(home: dict, away: dict) -> float:
-    return round((home.get("prob", 0) or 0) * (away.get("prob", 0) or 0) * 100, 1)
 
 
 def _get_team(standings: dict, group: str, pos: int) -> Optional[TeamRecord]:
@@ -329,10 +340,13 @@ def _team_entry(rec: Optional[TeamRecord], group: str, pos: int, pos_probs: dict
             "seed": f"{SEED_LABELS.get(pos, pos)}{group}", "prob": 0}
 
 
-def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], pos_probs: dict) -> dict:
+def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], thirds_qualify: dict) -> dict:
     if not rec or not src_group:
         return {"team": None, "flag": "🏳", "label": "3rd TBD", "seed": "3?", "prob": 0}
-    third_prob = pos_probs.get(src_group, {}).get(rec.name, {}).get(3, 0.0)
+    # thirds_qualify already gives the exact P(this team qualifies as a top-8
+    # third); ANNEX_SLOT_WEIGHT is still a placeholder for which of the 8
+    # slots Annex C happens to route them to specifically.
+    qualify_prob = thirds_qualify.get(rec.name, 0.0)
     return {
         "team": rec.name,
         "flag": FLAG_EMOJIS.get(rec.name, "🏳"),
@@ -341,7 +355,7 @@ def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], pos_probs:
         "played": rec.played,
         "group": src_group,
         "pos": 3,
-        "prob": round(third_prob * ANNEX_SLOT_WEIGHT, 4),
+        "prob": round(qualify_prob * ANNEX_SLOT_WEIGHT, 4),
     }
 
 
@@ -355,25 +369,31 @@ def compute_state(
     thirds = rank_thirds(standings)
 
     pos_probs = {}
+    thirds_qualify = {}
     if matches:
         import forecast
         pos_probs = forecast.compute_all_probabilities(results, matches)
+        thirds_qualify = forecast.thirds_qualification_probabilities(results, matches)
 
-    bracket = project_bracket(standings, pos_probs, r32_kickoffs)
+    bracket = project_bracket(standings, pos_probs, r32_kickoffs, thirds_qualify)
 
+    # "Prob" everywhere a team is shown now means P(advance to R32) — not
+    # P(finish in this exact position) — since 1st/2nd always advance and
+    # 3rd only advances if it also wins the cross-group third-place race.
     standings_payload = {}
     for g, recs in standings.items():
         team_probs = pos_probs.get(g, {})
         rows = []
-        for i, r in enumerate(recs):
+        for r in recs:
             d = r.to_dict()
-            current_pos = i + 1
-            d["prob"] = round(team_probs.get(r.name, {}).get(current_pos, 0.0), 4)
+            p = team_probs.get(r.name, {})
+            advance_prob = p.get(1, 0.0) + p.get(2, 0.0) + thirds_qualify.get(r.name, 0.0)
+            d["prob"] = round(advance_prob, 4)
             rows.append(d)
         standings_payload[g] = rows
 
     return {
         "standings": standings_payload,
         "bracket": bracket,
-        "thirds_race": thirds_race_payload(thirds, pos_probs),
+        "thirds_race": thirds_race_payload(thirds, thirds_qualify),
     }

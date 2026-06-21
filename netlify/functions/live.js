@@ -39,6 +39,7 @@ export async function handler() {
     const res = await fetch(`${SCOREBOARD_URL}?dates=${GROUP_STAGE_WINDOW}`);
     const data = await res.json();
     const live = [];
+    const all = [];
 
     for (const event of data.events || []) {
       const comp = event.competitions[0];
@@ -50,6 +51,22 @@ export async function handler() {
       const awayC = comp.competitors.find((c) => c.homeAway === "away");
       const statusType = comp.status.type;
       const status = statusFrom(statusType);
+
+      // Every group-stage match (any status) goes into `all` — this backs
+      // the "today's games" day-strip, which shows finished/live/upcoming
+      // together. `live` stays scoped to live/ht/recent-ft only, since
+      // that's what the standings live-overlay and ticker logic need.
+      all.push({
+        home: teamName(homeC.team.displayName),
+        away: teamName(awayC.team.displayName),
+        home_score: status === "ns" ? null : parseInt(homeC.score, 10),
+        away_score: status === "ns" ? null : parseInt(awayC.score, 10),
+        status,
+        minute: status === "live" ? comp.status.displayClock : statusType.description,
+        group: m[1],
+        kickoff: comp.date,
+      });
+
       if (status !== "live" && status !== "ht" && status !== "ft") continue;
       if (status === "ft" && Date.now() - new Date(comp.date).getTime() > FT_DISPLAY_WINDOW_MS) continue;
 
@@ -65,14 +82,25 @@ export async function handler() {
       });
     }
 
+    // Real official match numbers (1-72) aren't exposed by ESPN, so they're
+    // derived the same way R32's 73-88 were verified: chronological order
+    // across the whole group stage. Stable across requests since it's a
+    // fixed, known kickoff schedule.
+    all.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
+    all.forEach((m, i) => { m.number = i + 1; });
+
     return {
       statusCode: 200,
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control": "no-store",
+        // CDN-cached for 20s so concurrent visitors share one ESPN call
+        // (and one function invocation) instead of each triggering their
+        // own — "no-store" here is what blew through Netlify's free-tier
+        // usage limits and got the site paused.
+        "Cache-Control": "public, max-age=20",
         "Access-Control-Allow-Origin": "*",
       },
-      body: JSON.stringify({ live_matches: live }),
+      body: JSON.stringify({ live_matches: live, all_matches: all }),
     };
   } catch (err) {
     console.error("live.js error:", err);

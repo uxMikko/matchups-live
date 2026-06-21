@@ -23,37 +23,41 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 a { color: var(--blue); text-decoration: none; }
 
 /* Header */
-header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .site-name { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
 #last-updated { font-size: 12px; color: var(--muted); }
 
 /* Sections */
-.section { padding: 20px 16px 8px; }
+.section { padding: 20px 8px 8px; }
 .section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
 
 /* Flags */
 .flag-img { width: 20px; height: 15px; object-fit: cover; border-radius: 2px; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.15); }
 
-/* Live strip */
-#live-strip { display: none; }
-.live-match-card {
-  background: var(--surface);
+/* Today's games day-strip */
+#today-section { display: none; }
+.today-strip { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.today-card {
+  background: #fff;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--red);
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-width: 200px;
+  flex: 0 0 auto;
 }
-.live-badge { background: var(--red); color: white; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; animation: pulse-red 1.5s infinite; }
-.live-match-card.finished { border-left-color: var(--muted); }
-.live-badge.finished { background: var(--muted); animation: none; }
+.today-card-top { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.today-match-num { font-size: 14px; font-weight: 800; }
+.today-group { font-size: 11px; color: var(--muted); flex: 1; }
+.today-status { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.today-status.live { color: var(--red); display: inline-flex; align-items: center; gap: 4px; }
+.today-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: pulse-red 1.2s infinite; }
 @keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:.5} }
-.live-score { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
-.live-teams { flex: 1; }
-.live-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.today-team-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 14px; font-weight: 600; }
+.today-team-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-team-score { font-size: 16px; font-weight: 800; }
+.today-team-score.live { color: var(--red); }
+.today-footer { display: block; text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.today-footer.live { color: var(--red); font-weight: 700; }
 
 /* Bracket tree: column 1 = the 16 real R32 matches (one per row), columns
    2-5 = TBD placeholders for R16/QF/SF/Final, each centered across the rows
@@ -89,7 +93,6 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 }
 .tie-top { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid #ececef; margin-bottom: 8px; }
 .match-num { font-size: 13px; font-weight: 800; color: #15151a; }
-.match-prob-pill { background: #f8dbd0; color: #a32828; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; }
 .match-date { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .updating-badge { font-size: 10px; color: var(--pulse); font-weight: 700; }
 .tie-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 13px; font-weight: 600; }
@@ -137,9 +140,10 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .result-pill.live.tied { background: #ca8a04; color: #fff; }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: pulse-red 1.2s infinite; }
 .standings-col { width: 30px; text-align: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
-.prob-pill { width: 42px; text-align: center; font-size: 11px; font-weight: 700; padding: 3px 0; border-radius: 8px; flex-shrink: 0; }
+.prob-pill { width: 42px; display: flex; align-items: center; justify-content: center; gap: 2px; white-space: nowrap; font-size: 11px; font-weight: 700; padding: 3px 0; border-radius: 8px; flex-shrink: 0; }
 .prob-pill.partial { background: #ffedd5; color: #c2410c; }
 .prob-pill.certain { background: #dcfce7; color: #16a34a; }
+.prob-pill.eliminated { background: #e5e7eb; color: #4b5563; }
 
 
 /* Coming soon */
@@ -147,7 +151,7 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 .coming-soon h3 { font-size: 14px; margin-bottom: 6px; color: var(--text); }
 .coming-soon p { font-size: 13px; }
 
-.max-w { max-width: 900px; margin: 0 auto; }
+.max-w { max-width: 1100px; margin: 0 auto; }
 .spinner { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
 </style>
 </head>
@@ -160,10 +164,10 @@ header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); displa
 
 <div class="max-w">
 
-  <!-- LIVE STRIP -->
-  <div id="live-strip" class="section">
-    <div class="section-title" id="live-section-title">🔴 Live Now</div>
-    <div id="live-matches-container"></div>
+  <!-- TODAY'S GAMES -->
+  <div id="today-section" class="section">
+    <div class="section-title" id="today-section-title">Today's games</div>
+    <div id="today-matches-container" class="today-strip"></div>
   </div>
 
   <!-- BRACKET -->
@@ -229,6 +233,7 @@ let cachedState = { standings: {}, bracket: [], thirds_race: [], last_updated: n
 // fetched directly from ESPN on every poll, bypassing the cron entirely —
 // this is what makes the live score/clock feel actually live.
 let liveMatches = [];
+let allMatches = []; // every group-stage match (any status) — backs the today's-games strip
 const liveTickers = {}; // matchKey -> {baseMinute, fetchedAtMs, status, label}
 
 function matchKey(m) { return `${m.home}_${m.away}`; }
@@ -290,29 +295,97 @@ function applyLiveOverlay(standings, liveMatches) {
   return out;
 }
 
-// ── LIVE STRIP ────────────────────────────────────────────────────────────────
-function renderLive(liveMatches) {
-  const strip = document.getElementById("live-strip");
-  const title = document.getElementById("live-section-title");
-  const container = document.getElementById("live-matches-container");
-  if (!liveMatches || liveMatches.length === 0) {
-    strip.style.display = "none";
+// ── TODAY'S GAMES ─────────────────────────────────────────────────────────────
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+function formatDayHeader(dateKey) {
+  const d = new Date(dateKey);
+  return `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
+}
+
+function formatKickoffTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// Groups all_matches by local calendar day and shows today's slate — if
+// today has no matches (rest day), falls back to whichever day is
+// chronologically closest (could be the most recent past day or the next
+// upcoming one).
+function renderTodayStrip(allMatches) {
+  const section = document.getElementById("today-section");
+  const title = document.getElementById("today-section-title");
+  const container = document.getElementById("today-matches-container");
+  if (!allMatches || allMatches.length === 0) {
+    section.style.display = "none";
     return;
   }
-  strip.style.display = "block";
-  title.textContent = liveMatches.some(m => m.status !== "ft") ? "🔴 Live Now" : "Just Finished";
-  container.innerHTML = liveMatches.map(m => {
+
+  const dayGroups = {};
+  for (const m of allMatches) {
+    const key = new Date(m.kickoff).toDateString();
+    (dayGroups[key] = dayGroups[key] || []).push(m);
+  }
+
+  const now = new Date();
+  const todayKey = now.toDateString();
+  let chosenKey = dayGroups[todayKey] ? todayKey : null;
+  if (!chosenKey) {
+    let bestDist = Infinity;
+    for (const key of Object.keys(dayGroups)) {
+      const dist = Math.abs(new Date(key) - now);
+      if (dist < bestDist) { bestDist = dist; chosenKey = key; }
+    }
+  }
+  if (!chosenKey) {
+    section.style.display = "none";
+    return;
+  }
+
+  const dayMatches = dayGroups[chosenKey].slice().sort((a, b) => a.number - b.number);
+  section.style.display = "block";
+  title.textContent = `${formatDayHeader(chosenKey)} games`;
+
+  container.innerHTML = dayMatches.map(m => {
+    const isLive = m.status === "live" || m.status === "ht";
     const isFinished = m.status === "ft";
-    const badge = isFinished
-      ? '<span class="live-badge finished">FULL TIME</span>'
-      : '<span class="live-badge">LIVE</span>';
+    const showScore = isLive || isFinished;
+
+    const statusLabel = isLive
+      ? '<span class="today-status live"><span class="today-live-dot"></span>Live</span>'
+      : isFinished
+        ? '<span class="today-status">Finished</span>'
+        : '<span class="today-status">Next</span>';
+
+    const footer = isLive
+      ? `<span class="today-footer live">${tickingMinuteLabel(m)}</span>`
+      : isFinished
+        ? `<span class="today-footer">Full time</span>`
+        : `<span class="today-footer">${formatKickoffTime(m.kickoff)}</span>`;
+
+    const scoreSpan = (score) => showScore
+      ? `<span class="today-team-score${isLive ? " live" : ""}">${score ?? ""}</span>`
+      : "";
+
     return `
-    <div class="live-match-card${isFinished ? " finished" : ""}">
-      ${badge}
-      <div class="live-teams">
-        <div class="live-score">${flagImg(m.home)} ${m.home_score ?? "–"}&ndash;${m.away_score ?? "–"} ${flagImg(m.away)}</div>
-        <div class="live-meta">Group ${m.group} &middot; ${tickingMinuteLabel(m)}</div>
+    <div class="today-card">
+      <div class="today-card-top">
+        <span class="today-match-num">${m.number}</span>
+        <span class="today-group">Group ${m.group}</span>
+        ${statusLabel}
       </div>
+      <div class="today-team-row">
+        ${flagImg(m.home)}
+        <span class="today-team-name">${m.home}</span>
+        ${scoreSpan(m.home_score)}
+      </div>
+      <div class="today-team-row">
+        ${flagImg(m.away)}
+        <span class="today-team-name">${m.away}</span>
+        ${scoreSpan(m.away_score)}
+      </div>
+      ${footer}
     </div>`;
   }).join("");
 }
@@ -332,12 +405,12 @@ function detectChanges(newBracket) {
   setTimeout(() => updatedSlots.clear(), 120000); // clear after 2 min
 }
 
-function teamRow(t, variant) {
-  const pillCls = variant === "home" ? "orange" : "green";
+function teamRow(t) {
   if (!t || !t.team) {
     return `<div class="tie-team"><span class="seed">${t?.seed || ""}</span><span class="name" style="color:#9aa0ad">${t?.label || "TBD"}</span></div>`;
   }
   const probPct = Math.round((t.prob || 0) * 100);
+  const pillCls = probPct >= 100 ? "green" : "orange";
   return `<div class="tie-team">
     <span class="seed">${t.seed}</span>
     ${flagImg(t.team)}
@@ -379,17 +452,15 @@ function renderBracket(bracket) {
   let html = `<div class="round-title" style="grid-column:1">Round of 32</div>`;
   html += bracket.map((m, i) => {
     const isUpdated = updatedSlots.has(m.slot);
-    const matchProb = m.prob != null ? `${m.prob}%` : "–";
     return `
     <div class="tie-card${isUpdated ? " just-updated" : ""}" style="grid-row:${i + 2}">
       <div class="tie-top">
         <span class="match-num">${m.match_number ?? i + 73}</span>
-        <span class="match-prob-pill">${matchProb}</span>
         <span class="match-date">${formatKickoff(m.kickoff)}</span>
         ${isUpdated ? '<span class="updating-badge">🔴 UPDATING</span>' : ''}
       </div>
-      ${teamRow(m.home, "home")}
-      ${teamRow(m.away, "away")}
+      ${teamRow(m.home)}
+      ${teamRow(m.away)}
     </div>`;
   }).join("");
 
@@ -406,6 +477,16 @@ function renderBracket(bracket) {
   }
 
   grid.innerHTML = html;
+}
+
+// "prob" is always P(advance to R32) now, regardless of current position —
+// 100% confirmed gets a green checkmark, mathematically eliminated (0%) gets
+// a gray checkmark, anything in between is just the plain orange percentage.
+function advanceProbPill(prob) {
+  const pct = Math.round((prob || 0) * 100);
+  if ((prob || 0) > 0.999) return { pct, cls: "certain", checkmark: "✓ " };
+  if ((prob || 0) < 0.001) return { pct, cls: "eliminated", checkmark: "✓ " };
+  return { pct, cls: "partial", checkmark: "" };
 }
 
 // ── STANDINGS ─────────────────────────────────────────────────────────────────
@@ -443,8 +524,7 @@ function renderStandings(standings, liveMatches) {
         ? `<span class="result-pill live ${live.state}"><span class="live-dot"></span>${live.score}</span>`
         : "";
 
-      const probPct = Math.round((t.prob || 0) * 100);
-      const probCls = (t.prob || 0) > 0.999 ? "certain" : "partial";
+      const { pct: probPct, cls: probCls, checkmark } = advanceProbPill(t.prob);
 
       return `<div class="standings-row">
         <div class="pos-badge p${pos}">${pos}</div>
@@ -457,7 +537,7 @@ function renderStandings(standings, liveMatches) {
         <div class="standings-col">${t.played}</div>
         <div class="standings-col">${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</div>
         <div class="standings-col">${t.points}</div>
-        <div class="prob-pill ${probCls}">${probPct}%</div>
+        <div class="prob-pill ${probCls}">${checkmark}${probPct}%</div>
       </div>`;
     }).join("");
     return `<div class="group-card">
@@ -486,8 +566,7 @@ function renderThirds(thirds) {
 
   const rows = thirds.map((t) => {
     const badgeCls = t.qualifies ? "qualify" : "eliminated";
-    const probPct = Math.round((t.prob || 0) * 100);
-    const probCls = (t.prob || 0) > 0.999 ? "certain" : "partial";
+    const { pct: probPct, cls: probCls, checkmark } = advanceProbPill(t.prob);
     return `<div class="standings-row">
       <div class="pos-badge ${badgeCls}">${t.rank}</div>
       <div class="standings-team">
@@ -497,7 +576,7 @@ function renderThirds(thirds) {
       <div class="standings-col">${t.played}</div>
       <div class="standings-col">${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</div>
       <div class="standings-col">${t.points}</div>
-      <div class="prob-pill ${probCls}">${probPct}%</div>
+      <div class="prob-pill ${probCls}">${checkmark}${probPct}%</div>
     </div>`;
   }).join("");
 
@@ -545,15 +624,11 @@ let liveLoadedOnce = false;
 function inProgressMatches(matches) {
   return matches.filter(m => m.status === "live" || m.status === "ht");
 }
-function bannerMatches(matches) {
-  const active = inProgressMatches(matches);
-  return active.length > 0 ? active : matches.filter(m => m.status === "ft");
-}
 
 function renderAll() {
   if (!stateLoadedOnce || !liveLoadedOnce) return;
   const active = inProgressMatches(liveMatches);
-  renderLive(bannerMatches(liveMatches));
+  renderTodayStrip(allMatches);
   renderBracket(cachedState.bracket);
   renderStandings(applyLiveOverlay(cachedState.standings, active), active);
   renderThirds(cachedState.thirds_race);
@@ -572,38 +647,52 @@ async function fetchState() {
   }
 }
 
+// Adaptive interval, not a fixed setInterval: poll quickly only while a
+// match is actually in progress; back off hard the rest of the time. A
+// fixed fast interval is what burned through Netlify's free-tier usage
+// limits and got the site paused — most of the tournament has nothing
+// live at all, and that's most of the day.
+const LIVE_POLL_ACTIVE_MS = 20000;
+const LIVE_POLL_IDLE_MS = 90000;
+let liveFetchTimer = null;
+
 async function fetchLive() {
   try {
     const res = await fetch("/api/live");
-    if (!res.ok) return;
-    const data = await res.json();
-    liveMatches = data.live_matches || [];
+    if (res.ok) {
+      const data = await res.json();
+      liveMatches = data.live_matches || [];
+      allMatches = data.all_matches || [];
 
-    const now = Date.now();
-    for (const m of liveMatches) {
-      liveTickers[matchKey(m)] = {
-        baseMinute: m.status === "live" ? parseMinute(m.minute) : null,
-        hasStoppage: /\+/.test(m.minute || ""),
-        rawLabel: m.minute,
-        fetchedAtMs: now,
-        status: m.status,
-      };
+      const now = Date.now();
+      for (const m of liveMatches) {
+        liveTickers[matchKey(m)] = {
+          baseMinute: m.status === "live" ? parseMinute(m.minute) : null,
+          hasStoppage: /\+/.test(m.minute || ""),
+          rawLabel: m.minute,
+          fetchedAtMs: now,
+          status: m.status,
+        };
+      }
+      for (const key of Object.keys(liveTickers)) {
+        if (!liveMatches.some(m => matchKey(m) === key)) delete liveTickers[key];
+      }
+      liveLoadedOnce = true;
+      renderAll();
     }
-    for (const key of Object.keys(liveTickers)) {
-      if (!liveMatches.some(m => matchKey(m) === key)) delete liveTickers[key];
-    }
-    liveLoadedOnce = true;
-    renderAll();
   } catch (e) {
     console.error("fetchLive error:", e);
+  } finally {
+    clearTimeout(liveFetchTimer);
+    const delay = inProgressMatches(liveMatches).length > 0 ? LIVE_POLL_ACTIVE_MS : LIVE_POLL_IDLE_MS;
+    liveFetchTimer = setTimeout(fetchLive, delay);
   }
 }
 
 fetchState();
 fetchLive();
 setInterval(fetchState, 60000);
-setInterval(fetchLive, 15000);
-setInterval(() => renderLive(liveMatches), 1000); // local clock tick, no fetch
+setInterval(() => renderTodayStrip(allMatches), 1000); // local clock tick, no fetch
 setInterval(() => renderLastUpdated(cachedState.last_updated), 30000);
 </script>
 </body>
