@@ -249,8 +249,15 @@ def rank_thirds(standings: dict[str, list[TeamRecord]]) -> list[tuple[str, TeamR
     return thirds  # index 0 = best third, index 7 = 8th (last qualifier)
 
 
-def thirds_race_payload(thirds: list[tuple[str, TeamRecord]], thirds_qualify: dict | None = None) -> list[dict]:
-    thirds_qualify = thirds_qualify or {}
+def thirds_race_payload(thirds: list[tuple[str, TeamRecord]], advance_prob: dict | None = None) -> list[dict]:
+    """advance_prob is each team's overall P(advance to R32) - the same
+    number the group standings table shows - not the narrower P(finish 3rd
+    AND qualify via the thirds race). A team like one likely to finish 2nd
+    outright would show a misleadingly low number under the narrower
+    definition, since most of its real qualification chances come from a
+    path this table doesn't track at all; showing the same overall number
+    as everywhere else avoids that confusion."""
+    advance_prob = advance_prob or {}
     out = []
     for i, (g, rec) in enumerate(thirds):
         d = rec.to_dict()
@@ -258,7 +265,7 @@ def thirds_race_payload(thirds: list[tuple[str, TeamRecord]], thirds_qualify: di
         d["rank"] = i + 1
         d["qualifies"] = i < 8
         d["cutoff"] = i == 7  # marks the 8th/9th boundary
-        d["prob"] = round(thirds_qualify.get(rec.name, 0.0), 4)
+        d["prob"] = round(advance_prob.get(rec.name, 0.0), 4)
         out.append(d)
     return out
 
@@ -302,44 +309,17 @@ MATCH_NUMBERS: dict[str, int] = {
 BRACKET_TREE_ORDER = ["RE", "RI", "R1", "R3", "R7", "R4", "RD", "RG",
                        "R2", "R6", "RA", "RL", "R5", "R8", "RB", "RK"]
 
-R16_NUMBERS = [89, 90, 93, 94, 91, 92, 95, 96]
-QF_NUMBERS = [97, 98, 99, 100]
-SF_NUMBERS = [101, 102]
-FINAL_NUMBER = 104
-BRONZE_NUMBER = 103
-
-
-def _feeder_pairs(slot_order: list, numbers: list[int]) -> dict[frozenset, int]:
-    """slot_order's i-th adjacent pair (2i, 2i+1) feeds numbers[i] - same
-    tree-walk relationship BRACKET_TREE_ORDER/R16_NUMBERS/etc. already
-    encode, just indexed by frozenset so a caller holding two match numbers
-    (in either order) can look up what they feed into."""
-    return {
-        frozenset({slot_order[2 * i], slot_order[2 * i + 1]}): numbers[i]
-        for i in range(len(numbers))
-    }
-
-
-# Used by scraper.fetch_later_kickoffs() to identify which real match number
-# ESPN's placeholder R16-Final fixtures are, from the pair of earlier-round
-# match numbers ESPN names them by (e.g. "Round of 32 3 Winner at Round of
-# 32 1 Winner" feeds the R16 match between match 75 and match 73 - look that
-# pair up here to get its own real match number, 90).
-R32_FEEDER_TO_R16 = _feeder_pairs([MATCH_NUMBERS[s] for s in BRACKET_TREE_ORDER], R16_NUMBERS)
-R16_FEEDER_TO_QF = _feeder_pairs(R16_NUMBERS, QF_NUMBERS)
-QF_FEEDER_TO_SF = _feeder_pairs(QF_NUMBERS, SF_NUMBERS)
-
 
 def project_bracket(
     standings: dict[str, list[TeamRecord]],
     pos_probs: dict | None = None,
     r32_kickoffs: dict | None = None,
-    thirds_qualify: dict | None = None,
+    advance_prob: dict | None = None,
 ) -> list[dict]:
     """Project all 16 R32 matches from current standings."""
     pos_probs = pos_probs or {}
     r32_kickoffs = r32_kickoffs or {}
-    thirds_qualify = thirds_qualify or {}
+    advance_prob = advance_prob or {}
     thirds = rank_thirds(standings)
     qualifying_8 = {g for g, _ in thirds[:8]}
     annex = ac.lookup(qualifying_8)  # {slot: source_group}
@@ -370,7 +350,7 @@ def project_bracket(
         winner = _get_team(standings, slot_letter, 1)
         third = third_by_group.get(src_group) if src_group else None
         home = _team_entry(winner, slot_letter, 1, pos_probs)
-        away = _third_entry(third, src_group, thirds_qualify) if third else {"label": f"3rd Grp {src_group or '?'}", "team": None, "prob": 0}
+        away = _third_entry(third, src_group, advance_prob) if third else {"label": f"3rd Grp {src_group or '?'}", "team": None, "prob": 0}
         slot = f"R{slot_letter}"
         matches.append({
             "slot": slot,
@@ -408,15 +388,15 @@ def _team_entry(rec: Optional[TeamRecord], group: str, pos: int, pos_probs: dict
             "seed": f"{SEED_LABELS.get(pos, pos)}{group}", "prob": 0}
 
 
-def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], thirds_qualify: dict) -> dict:
+def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], advance_prob: dict) -> dict:
     if not rec or not src_group:
         return {"team": None, "flag": "🏳", "label": "3rd TBD", "seed": "3?", "prob": 0}
-    # Shown prob is P(this team qualifies as a top-8 third) - the same
-    # number as the third-place race table. It does NOT account for which of
-    # the 8 third-place R32 slots Annex C specifically routes them to; that
-    # would need marginalizing Annex C's routing over every combination of
-    # which 8 groups produce the top-8 thirds, which isn't computed here.
-    qualify_prob = thirds_qualify.get(rec.name, 0.0)
+    # Shown prob is the team's overall P(advance to R32) - same number the
+    # standings table and the third-place race table both show - not the
+    # narrower P(finish 3rd in own group AND qualify via the thirds race).
+    # A team whose realistic path is finishing 1st/2nd outright would show
+    # a misleadingly low number under that narrower definition.
+    prob = advance_prob.get(rec.name, 0.0)
     return {
         "team": rec.name,
         "flag": FLAG_EMOJIS.get(rec.name, "🏳"),
@@ -425,91 +405,8 @@ def _third_entry(rec: Optional[TeamRecord], src_group: Optional[str], thirds_qua
         "played": rec.played,
         "group": src_group,
         "pos": 3,
-        "prob": round(qualify_prob, 4),
+        "prob": round(prob, 4),
     }
-
-
-# ── R16-FINAL PROJECTION (predicted tab only) ─────────────────────────────────
-# R16_NUMBERS/QF_NUMBERS/SF_NUMBERS/FINAL_NUMBER/BRONZE_NUMBER are defined
-# above, alongside BRACKET_TREE_ORDER, since R32_FEEDER_TO_R16 etc. need them
-# too. R16_NUMBERS[i] is fed by R32 matches 2i and 2i+1 of
-# project_bracket()'s output, QF_NUMBERS[i] by R16 matches 2i/2i+1, etc.
-
-_TBD_ENTRY = {"team": None, "flag": "🏳", "label": "TBD", "seed": "?", "prob": 0}
-
-
-def _advance_entry(team_entry: dict, win_prob: float) -> dict:
-    """Carries a team's identity into the next round, with prob replaced
-    by P(winning this specific match) - locally meaningful the same way
-    R32's prob (P(advance to R32)) is, just one round at a time."""
-    if not team_entry.get("team"):
-        return _TBD_ENTRY
-    return {**team_entry, "prob": round(win_prob, 4)}
-
-
-def _project_one(home_entry: dict, away_entry: dict, match_number: int, kickoff: str | None) -> dict:
-    if not home_entry.get("team") or not away_entry.get("team"):
-        return {
-            "match_number": match_number,
-            "kickoff": kickoff,
-            "home": home_entry if home_entry.get("team") else _TBD_ENTRY,
-            "away": away_entry if away_entry.get("team") else _TBD_ENTRY,
-            "winner": None, "loser": None,
-        }
-    import forecast
-    p_home = forecast.knockout_win_prob(home_entry["team"], away_entry["team"])
-    home_out = _advance_entry(home_entry, p_home)
-    away_out = _advance_entry(away_entry, 1 - p_home)
-    winner, loser = (home_out, away_out) if p_home >= 0.5 else (away_out, home_out)
-    return {"match_number": match_number, "kickoff": kickoff, "home": home_out, "away": away_out, "winner": winner, "loser": loser}
-
-
-def project_knockout_rounds(r32_matches: list[dict], later_kickoffs: dict | None = None) -> list[dict]:
-    """Given the 16 R32 matches (project_bracket()'s output, already in
-    bracket-tree order), projects a single most-likely winner forward
-    through R16, QF, SF, the Final, and the Bronze final - same odds/Elo
-    model as everywhere else (forecast.knockout_win_prob), continuously
-    recomputed every refresh rather than gated on anything, matching how
-    groups/R32 are already always fully populated on the predicted tab.
-    Returns a flat list of match dicts (each {match_number, home, away}),
-    32 entries total across all 5 of these rounds. later_kickoffs ({match
-    number: kickoff iso}, from scraper.fetch_later_kickoffs()) attaches the
-    real scheduled date/time to each - that's fixed per match number
-    regardless of which teams end up playing it, same as R32's."""
-    later_kickoffs = later_kickoffs or {}
-    # R32 entries' own "prob" is P(advance to R32), not a head-to-head
-    # comparison, so each match's favored side is re-derived from scratch.
-    current = []
-    for m in r32_matches:
-        h, a = m["home"], m["away"]
-        if not h.get("team") or not a.get("team"):
-            current.append(h if h.get("team") else a)
-            continue
-        import forecast
-        p_home = forecast.knockout_win_prob(h["team"], a["team"])
-        current.append(h if p_home >= 0.5 else a)
-
-    out = []
-    sf_losers = []
-    for round_numbers in (R16_NUMBERS, QF_NUMBERS, SF_NUMBERS):
-        next_round = []
-        for i, number in enumerate(round_numbers):
-            match = _project_one(current[2 * i], current[2 * i + 1], number, later_kickoffs.get(number))
-            out.append(match)
-            next_round.append(match["winner"] or _TBD_ENTRY)
-            if round_numbers is SF_NUMBERS:
-                sf_losers.append(match["loser"] or _TBD_ENTRY)
-        current = next_round
-
-    final = _project_one(current[0], current[1], FINAL_NUMBER, later_kickoffs.get(FINAL_NUMBER))
-    out.append(final)
-    bronze = (
-        _project_one(sf_losers[0], sf_losers[1], BRONZE_NUMBER, later_kickoffs.get(BRONZE_NUMBER))
-        if len(sf_losers) == 2 else None
-    )
-    if bronze:
-        out.append(bronze)
-    return out
 
 
 # ── FULL STATE COMPUTATION ────────────────────────────────────────────────────
@@ -528,27 +425,35 @@ def compute_state(
         pos_probs = forecast.compute_all_probabilities(results, matches)
         thirds_qualify = forecast.thirds_qualification_probabilities(results, matches)
 
-    bracket = project_bracket(standings, pos_probs, r32_kickoffs, thirds_qualify)
-
     # "Prob" everywhere a team is shown now means P(advance to R32) — not
     # P(finish in this exact position) — since 1st/2nd always advance and
     # 3rd only advances if it also wins the cross-group third-place race.
-    standings_payload = {}
+    # Computed once here so the standings table, the third-place race
+    # table, and the R32 bracket's third-place slots all show the exact
+    # same number for a given team, instead of each computing their own
+    # narrower slice of it.
+    advance_prob: dict[str, float] = {}
     for g, recs in standings.items():
         team_probs = pos_probs.get(g, {})
+        for r in recs:
+            p = team_probs.get(r.name, {})
+            advance_prob[r.name] = p.get(1, 0.0) + p.get(2, 0.0) + thirds_qualify.get(r.name, 0.0)
+
+    bracket = project_bracket(standings, pos_probs, r32_kickoffs, advance_prob)
+
+    standings_payload = {}
+    for g, recs in standings.items():
         rows = []
         for r in recs:
             d = r.to_dict()
-            p = team_probs.get(r.name, {})
-            advance_prob = p.get(1, 0.0) + p.get(2, 0.0) + thirds_qualify.get(r.name, 0.0)
-            d["prob"] = round(advance_prob, 4)
+            d["prob"] = round(advance_prob.get(r.name, 0.0), 4)
             rows.append(d)
         standings_payload[g] = rows
 
     return {
         "standings": standings_payload,
         "bracket": bracket,
-        "thirds_race": thirds_race_payload(thirds, thirds_qualify),
+        "thirds_race": thirds_race_payload(thirds, advance_prob),
     }
 
 
@@ -556,7 +461,6 @@ def compute_predicted_state(
     results: list[dict],
     matches: list[dict],
     r32_kickoffs: dict | None = None,
-    later_kickoffs: dict | None = None,
 ) -> dict:
     """The "Predicted Outcome" tab: every team ranked by its expected final
     points (see forecast.predicted_final_standings — P(win)*3 + P(draw)*1
@@ -578,18 +482,14 @@ def compute_predicted_state(
     results that don't reflect how often groups actually get separated by
     a draw.
 
-    Unlike the group stage, R32-and-later matches genuinely can't end in a
-    draw, so project_knockout_rounds() projects those rounds with a single
-    most-likely winner per match (forecast.knockout_win_prob) rather than
-    expected points - there's no "expected points" notion for a knockout
-    match. bracket therefore ends up with all 32 R32-through-Bronze-Final
-    matches, continuously recomputed every refresh the same way the rest of
-    this tab already is, not gated on real odds existing for a given match
-    (Elo is always available as a fallback)."""
+    bracket stops at the 16 R32 matches, same as compute_state() - R16 and
+    later are intentionally left as TBD rather than projected forward, since
+    those matchups don't exist yet (which two teams meet depends on R32
+    results that haven't happened) and projecting a guess on top of a
+    guess compounds speculation past the point of being useful."""
     import forecast
     predicted_standings = forecast.predicted_final_standings(results, matches)
     bracket = project_bracket(predicted_standings, r32_kickoffs=r32_kickoffs)
-    bracket = bracket + project_knockout_rounds(bracket, later_kickoffs=later_kickoffs)
     standings_payload = {
         g: [
             {"name": r.name, "flag": FLAG_EMOJIS.get(r.name, "🏳"), "position": i + 1}

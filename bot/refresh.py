@@ -39,7 +39,6 @@ async def main():
     results, live_matches = await scraper.fetch_group_stage_results()
     matches = await scraper.fetch_group_stage_matches()
     r32_kickoffs = await scraper.fetch_r32_kickoffs()
-    later_kickoffs = await scraper.fetch_later_kickoffs()
     engine.OFFICIAL_RANKS = await scraper.fetch_group_ranks()
     forecast.ELO_RATINGS = await elo.fetch_elo_ratings()
     forecast.REAL_ODDS = await odds_state.load_real_odds()
@@ -61,7 +60,7 @@ async def main():
         forecast.REAL_ODDS = await odds_state.load_real_odds()
         state = engine.compute_state(results, matches, r32_kickoffs)
 
-    predicted = engine.compute_predicted_state(results, matches, r32_kickoffs, later_kickoffs)
+    predicted = engine.compute_predicted_state(results, matches, r32_kickoffs)
     fixture_probs = forecast.remaining_fixture_probs(results, matches)
     await rc.push_state(
         state["standings"],

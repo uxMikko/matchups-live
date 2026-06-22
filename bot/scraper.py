@@ -280,55 +280,6 @@ async def fetch_r32_kickoffs() -> dict[str, str]:
     return kickoffs
 
 
-# ESPN already carries placeholder fixtures for R16 through the Final/Bronze
-# too, same idea as R32_WINDOW above - real scheduled date/time, teams not
-# yet determined. Named like "Round of 32 3 Winner at Round of 32 1 Winner"
-# (an R16 match - it's named after its TWO feeder matches, not itself).
-# Confirmed by fetching this window for real and cross-checking every
-# event's ordinal pair against engine.py's verified match-number tree: every
-# one matched. ESPN's "<Round> N" ordinal for a round is just that round's
-# first real FIFA match number minus 1, plus N (e.g. R32 ordinal 3 = match
-# 72+3 = 75; R16 ordinal 2 = match 88+2 = 90).
-LATER_ROUNDS_WINDOW = "20260704-20260720"
-_LATER_ROUND_RE = re.compile(r"(Round of 32|Round of 16|Quarterfinal|Semifinal) (\d+) (Winner|Loser)")
-_LATER_ROUND_OFFSET = {"Round of 32": 72, "Round of 16": 88, "Quarterfinal": 96, "Semifinal": 100}
-
-
-def _later_match_number(event_name: str) -> Optional[int]:
-    """Maps an ESPN placeholder event name to the real FIFA match number
-    (89-104) it represents, via the feeder-pair lookup tables in engine.py
-    (see their docstrings for how those tables were derived)."""
-    import engine
-    found = _LATER_ROUND_RE.findall(event_name)
-    if len(found) != 2:
-        return None
-    (round_a, ord_a, suffix_a), (round_b, ord_b, _) = found
-    if round_a != round_b:
-        return None
-    if round_a == "Semifinal":
-        return engine.FINAL_NUMBER if suffix_a == "Winner" else engine.BRONZE_NUMBER
-    offset = _LATER_ROUND_OFFSET[round_a]
-    feeder_map = {
-        "Round of 32": engine.R32_FEEDER_TO_R16,
-        "Round of 16": engine.R16_FEEDER_TO_QF,
-        "Quarterfinal": engine.QF_FEEDER_TO_SF,
-    }[round_a]
-    pair = frozenset({offset + int(ord_a), offset + int(ord_b)})
-    return feeder_map.get(pair)
-
-
-async def fetch_later_kickoffs() -> dict[int, str]:
-    """{match_number: kickoff ISO datetime (UTC)} for R16 through the Final
-    and Bronze Final (match numbers 89-104)."""
-    data = await _fetch_scoreboard(LATER_ROUNDS_WINDOW)
-    kickoffs: dict[int, str] = {}
-    for event in data.get("events", []):
-        number = _later_match_number(event.get("name", ""))
-        if number:
-            kickoffs[number] = event["competitions"][0]["date"]
-    return kickoffs
-
-
 STANDINGS_URL = "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings"
 
 

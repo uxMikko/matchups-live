@@ -72,15 +72,6 @@ def _match_probs(home: str, away: str) -> dict[str, float]:
     return {"H": p_home, "D": DRAW_PROB, "A": p_away}
 
 
-def knockout_win_prob(home: str, away: str) -> float:
-    """P(home advances) in a match that cannot end in a draw - extra time
-    and penalties decide it instead. Splits _match_probs()'s draw mass
-    evenly between the two sides rather than dropping it, since a team
-    that was 50/50 to draw in 90 minutes doesn't become 0% to advance."""
-    probs = _match_probs(home, away)
-    return probs["H"] + probs["D"] / 2
-
-
 def group_position_probabilities(
     group: str, completed: list[dict], remaining: list[dict]
 ) -> dict[str, dict[int, float]]:
