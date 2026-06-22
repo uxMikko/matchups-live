@@ -2,10 +2,14 @@
 Probability model for group-stage outcomes.
 
 For each group, enumerates every possible result (home win / draw / away win)
-for the remaining fixtures, weights each combination by a win-probability
-derived from real Elo ratings (see elo.py), and tallies how often each team
-lands in each of the 4 final positions. This gives P(team finishes group in
-position k).
+for the remaining fixtures, weights each combination by a win-probability,
+and tallies how often each team lands in each of the 4 final positions.
+This gives P(team finishes group in position k).
+
+Per-fixture win/draw/loss weights come from real bookmaker odds (see
+odds_api.py/odds_state.py) when available — which is only for fixtures
+close enough to kickoff that the Odds API has actually priced them — and
+fall back to an Elo-based estimate (elo.py) otherwise. See _match_probs().
 
 thirds_qualification_probabilities() then answers the harder question: of
 the 12 teams that finish 3rd in their own group, only the best 8 (by the
@@ -24,8 +28,8 @@ actually shows — is then just P(finish 1st) + P(finish 2nd) + P(finish 3rd
 AND qualify as one of the top-8 thirds), since those three outcomes are
 mutually exclusive.
 
-The draw probability is still a flat placeholder (25% regardless of
-opponent) pending real bookmaker odds for near-term fixtures.
+The draw probability is still a flat 25%-regardless-of-opponent placeholder
+for any fixture _match_probs() has no real odds for yet.
 """
 from __future__ import annotations
 from itertools import product as iproduct
@@ -39,6 +43,13 @@ _OUTCOME_SCORES = {"H": (1, 0), "D": (0, 0), "A": (0, 1)}
 # running any simulation here — same pattern as engine.OFFICIAL_RANKS.
 ELO_RATINGS: dict[str, float] = {}
 
+# Real bookmaker odds (odds_state.load_real_odds()), set by the caller
+# before running any simulation here. {"TeamA|TeamB" sorted key: {"home",
+# "away", "p_home", "p_draw", "p_away"}}. Only ever populated for fixtures
+# the Odds API has actually returned odds for (live/near-term matches) —
+# _match_probs() falls back to the Elo estimate for everything else.
+REAL_ODDS: dict[str, dict] = {}
+
 
 def _strength(team: str) -> float:
     """10**(rating/400) is the standard Elo/Bradley-Terry parameterization:
@@ -50,10 +61,24 @@ def _strength(team: str) -> float:
 
 
 def _match_probs(home: str, away: str) -> dict[str, float]:
+    real = REAL_ODDS.get("|".join(sorted([home, away])))
+    if real:
+        if real["home"] == home:
+            return {"H": real["p_home"], "D": real["p_draw"], "A": real["p_away"]}
+        return {"H": real["p_away"], "D": real["p_draw"], "A": real["p_home"]}
     sh, sa = _strength(home), _strength(away)
     p_home = (1 - DRAW_PROB) * sh / (sh + sa)
     p_away = (1 - DRAW_PROB) * sa / (sh + sa)
     return {"H": p_home, "D": DRAW_PROB, "A": p_away}
+
+
+def knockout_win_prob(home: str, away: str) -> float:
+    """P(home advances) in a match that cannot end in a draw - extra time
+    and penalties decide it instead. Splits _match_probs()'s draw mass
+    evenly between the two sides rather than dropping it, since a team
+    that was 50/50 to draw in 90 minutes doesn't become 0% to advance."""
+    probs = _match_probs(home, away)
+    return probs["H"] + probs["D"] / 2
 
 
 def group_position_probabilities(
@@ -197,3 +222,65 @@ def thirds_qualification_probabilities(
             p_qualify_given_scenario = _poisson_binomial_le(beat_probs, 7)
             qualify_prob[team] = qualify_prob.get(team, 0.0) + weight * p_qualify_given_scenario
     return qualify_prob
+
+
+def predicted_final_standings(
+    results: list[dict], matches: list[dict]
+) -> dict[str, list["engine.PredictedTeamRecord"]]:
+    """The "Predicted Outcome" tab's group tables: one single deterministic
+    final standing per group, not a probability spread. For each remaining
+    fixture, instead of enumerating every H/D/A outcome (like
+    group_position_probabilities does), this just adds its *expected*
+    points contribution — P(win)*3 + P(draw)*1 — straight onto each team's
+    current actual points. That's the "aggregate the odds across remaining
+    games" the user described, applied directly to points rather than to a
+    full win/draw/loss distribution per game.
+
+    _match_probs() uses real bookmaker odds for any fixture the Odds API
+    has priced, Elo otherwise (see forecast.py's module docstring).
+    """
+    completed_by_group, remaining_by_group = _split_completed_remaining(results, matches)
+    predicted: dict[str, list] = {}
+
+    for group in engine.GROUPS:
+        actual = engine.build_group_standings(group, completed_by_group[group])
+        expected_points = {r.name: float(r.points) for r in actual}
+        for fixture in remaining_by_group[group]:
+            probs = _match_probs(fixture["home"], fixture["away"])
+            expected_points[fixture["home"]] += probs["H"] * 3 + probs["D"]
+            expected_points[fixture["away"]] += probs["A"] * 3 + probs["D"]
+
+        records = [
+            engine.PredictedTeamRecord(
+                name=r.name, group=group, played=r.played, won=r.won, drawn=r.drawn,
+                lost=r.lost, goals_for=r.goals_for, goals_against=r.goals_against,
+                yellow_cards=r.yellow_cards, red_cards=r.red_cards,
+                predicted_points=round(expected_points[r.name], 1),
+            )
+            for r in actual
+        ]
+        records.sort(key=lambda r: r.sort_key())
+        predicted[group] = records
+
+    return predicted
+
+
+def remaining_fixture_probs(results: list[dict], matches: list[dict]) -> list[dict]:
+    """Per-fixture win/draw/loss probabilities for every group-stage match
+    that hasn't been played yet (live matches included - their fixture is
+    still "remaining" by this split even though it's already kicked off).
+    Used by the Lab tab to seed a concrete placeholder result (whichever
+    outcome is most likely) for any game the user hasn't manually scored
+    yet, instead of an uninformative, unweighted 0-0."""
+    _, remaining_by_group = _split_completed_remaining(results, matches)
+    out = []
+    for group, fixtures in remaining_by_group.items():
+        for m in fixtures:
+            probs = _match_probs(m["home"], m["away"])
+            out.append({
+                "home": m["home"], "away": m["away"], "group": group,
+                "p_home": round(probs["H"], 4),
+                "p_draw": round(probs["D"], 4),
+                "p_away": round(probs["A"], 4),
+            })
+    return out

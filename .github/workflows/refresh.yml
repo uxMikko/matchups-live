@@ -1,8 +1,13 @@
 name: Refresh live scores
 
 on:
+  # GitHub deprioritizes and delays the schedule trigger under load (observed
+  # 1-6hr real-world gaps instead of 5min) - workflow_dispatch isn't subject
+  # to that, so an external pinger (cron-job.org) hits the dispatch API every
+  # 5min instead. This hourly schedule stays only as a safety net in case the
+  # external pinger ever stops - public repo, so it's free either way.
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -18,3 +23,4 @@ jobs:
         env:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}

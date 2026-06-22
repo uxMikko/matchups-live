@@ -222,10 +222,15 @@ async def fetch_group_stage_matches() -> list[dict]:
 # the placeholder description as the team displayName (e.g. "Group A 2nd
 # Place"), keyed here as "{home} vs {away}", verified by cross-checking
 # every one against our own FIXED_R32/THIRD_SLOTS composition in engine.py
-# — every slot matched exactly. Interesting detail confirmed by ESPN's own
-# data: the two host-nation slots (Group A and Group D winners) are named
-# "Mexico" and "United States" directly rather than "Group A Winner" /
-# "Group D Winner", presumably because hosts get a fixed bracket seed.
+# — every slot matched exactly.
+#
+# Gotcha confirmed twice now: ESPN swaps the literal team name in for the
+# "Group X Winner" placeholder as soon as that group winner is mathematically
+# determined — not just for the two host nations (Mexico/USA, who get a
+# fixed bracket seed regardless of form), but for any group once it's
+# clinched (e.g. Germany in Group E, mid-tournament). _canonical_role()
+# below undoes that swap before the dict lookup, instead of hardcoding every
+# team name that might eventually get clinched.
 R32_WINDOW = "20260628-20260704"
 R32_NOTE_TO_SLOT = {
     "Group A 2nd Place vs Group B 2nd Place": "R1",
@@ -236,15 +241,28 @@ R32_NOTE_TO_SLOT = {
     "Group E 2nd Place vs Group I 2nd Place": "R6",
     "Group K 2nd Place vs Group L 2nd Place": "R7",
     "Group D 2nd Place vs Group G 2nd Place": "R8",
-    "Mexico vs Third Place Group C/E/F/H/I": "RA",
+    "Group A Winner vs Third Place Group C/E/F/H/I": "RA",
     "Group B Winner vs Third Place Group E/F/G/I/J": "RB",
-    "United States vs Third Place Group B/E/F/I/J": "RD",
+    "Group D Winner vs Third Place Group B/E/F/I/J": "RD",
     "Group E Winner vs Third Place Group A/B/C/D/F": "RE",
     "Group G Winner vs Third Place Group A/E/H/I/J": "RG",
     "Group I Winner vs Third Place Group C/D/F/G/H": "RI",
     "Group K Winner vs Third Place Group D/E/I/J/L": "RK",
     "Group L Winner vs Third Place Group E/H/I/J/K": "RL",
 }
+
+
+def _canonical_role(display_name: str) -> str:
+    """Undoes ESPN's "Group X Winner" -> "<real team name>" swap (see the
+    comment above R32_NOTE_TO_SLOT) so the dict lookup still matches once a
+    group is clinched. Every swap observed so far has been a group winner
+    (never a 2nd place or a confirmed third), so that's the only role
+    assumed here; non-team text (still a placeholder, or anything
+    unrecognized) passes through unchanged."""
+    import engine
+    team = NAME_FROM_ESPN.get(display_name, display_name)
+    group = engine.TEAM_TO_GROUP.get(team)
+    return f"Group {group} Winner" if group else display_name
 
 
 async def fetch_r32_kickoffs() -> dict[str, str]:
@@ -255,10 +273,59 @@ async def fetch_r32_kickoffs() -> dict[str, str]:
         comp = event["competitions"][0]
         home_c = next(c for c in comp["competitors"] if c["homeAway"] == "home")
         away_c = next(c for c in comp["competitors"] if c["homeAway"] == "away")
-        key = f"{home_c['team']['displayName']} vs {away_c['team']['displayName']}"
+        key = f"{_canonical_role(home_c['team']['displayName'])} vs {_canonical_role(away_c['team']['displayName'])}"
         slot = R32_NOTE_TO_SLOT.get(key)
         if slot:
             kickoffs[slot] = comp["date"]
+    return kickoffs
+
+
+# ESPN already carries placeholder fixtures for R16 through the Final/Bronze
+# too, same idea as R32_WINDOW above - real scheduled date/time, teams not
+# yet determined. Named like "Round of 32 3 Winner at Round of 32 1 Winner"
+# (an R16 match - it's named after its TWO feeder matches, not itself).
+# Confirmed by fetching this window for real and cross-checking every
+# event's ordinal pair against engine.py's verified match-number tree: every
+# one matched. ESPN's "<Round> N" ordinal for a round is just that round's
+# first real FIFA match number minus 1, plus N (e.g. R32 ordinal 3 = match
+# 72+3 = 75; R16 ordinal 2 = match 88+2 = 90).
+LATER_ROUNDS_WINDOW = "20260704-20260720"
+_LATER_ROUND_RE = re.compile(r"(Round of 32|Round of 16|Quarterfinal|Semifinal) (\d+) (Winner|Loser)")
+_LATER_ROUND_OFFSET = {"Round of 32": 72, "Round of 16": 88, "Quarterfinal": 96, "Semifinal": 100}
+
+
+def _later_match_number(event_name: str) -> Optional[int]:
+    """Maps an ESPN placeholder event name to the real FIFA match number
+    (89-104) it represents, via the feeder-pair lookup tables in engine.py
+    (see their docstrings for how those tables were derived)."""
+    import engine
+    found = _LATER_ROUND_RE.findall(event_name)
+    if len(found) != 2:
+        return None
+    (round_a, ord_a, suffix_a), (round_b, ord_b, _) = found
+    if round_a != round_b:
+        return None
+    if round_a == "Semifinal":
+        return engine.FINAL_NUMBER if suffix_a == "Winner" else engine.BRONZE_NUMBER
+    offset = _LATER_ROUND_OFFSET[round_a]
+    feeder_map = {
+        "Round of 32": engine.R32_FEEDER_TO_R16,
+        "Round of 16": engine.R16_FEEDER_TO_QF,
+        "Quarterfinal": engine.QF_FEEDER_TO_SF,
+    }[round_a]
+    pair = frozenset({offset + int(ord_a), offset + int(ord_b)})
+    return feeder_map.get(pair)
+
+
+async def fetch_later_kickoffs() -> dict[int, str]:
+    """{match_number: kickoff ISO datetime (UTC)} for R16 through the Final
+    and Bronze Final (match numbers 89-104)."""
+    data = await _fetch_scoreboard(LATER_ROUNDS_WINDOW)
+    kickoffs: dict[int, str] = {}
+    for event in data.get("events", []):
+        number = _later_match_number(event.get("name", ""))
+        if number:
+            kickoffs[number] = event["competitions"][0]["date"]
     return kickoffs
 
 
@@ -343,6 +410,57 @@ async def fetch_group_stage_results() -> tuple[list[dict], list[dict]]:
                 "home": home, "away": away,
                 "home_score": score.home_score, "away_score": score.away_score,
                 "minute": score.minute, "status": score.status, "group": group,
+                # Needed by odds_state.py to poll per-match card data and
+                # diff snapshots across cron cycles - not used by the
+                # frontend (live.js is its own separate fast-poll path).
+                "event_id": event["id"],
+                "home_espn": home_c["team"]["displayName"],
+                "away_espn": away_c["team"]["displayName"],
             })
 
     return results, live_matches
+
+
+SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary"
+
+
+async def fetch_red_card_counts(live_events: list[dict]) -> dict[str, dict[str, int]]:
+    """{event_id: {"home": n, "away": n}} red card counts (straight reds +
+    VAR red-card upgrades) for each given live match. live_events:
+    [{"event_id", "home_espn", "away_espn"}, ...] - the ESPN display names
+    are needed because the summary endpoint's keyEvents identify the
+    carded team by displayName, not home/away side.
+
+    Uses ESPN's per-event summary endpoint, since the bulk scoreboard
+    endpoint used everywhere else doesn't carry card data - one extra ESPN
+    call per live match per cron cycle. ESPN's API is free/unofficial, so
+    this doesn't touch the Odds API credit budget."""
+    counts: dict[str, dict[str, int]] = {}
+    if not live_events:
+        return counts
+    async with httpx.AsyncClient() as client:
+        for ev in live_events:
+            try:
+                r = await client.get(
+                    SUMMARY_URL,
+                    params={"event": ev["event_id"]},
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=10,
+                )
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                log.warning(f"ESPN summary fetch failed (event {ev['event_id']}): {e}")
+                continue
+            home_n = away_n = 0
+            for key_event in data.get("keyEvents", []) or []:
+                etype = (key_event.get("type") or {}).get("type", "")
+                if "red-card" not in etype:
+                    continue
+                team_name = (key_event.get("team") or {}).get("displayName")
+                if team_name == ev["home_espn"]:
+                    home_n += 1
+                elif team_name == ev["away_espn"]:
+                    away_n += 1
+            counts[ev["event_id"]] = {"home": home_n, "away": away_n}
+    return counts

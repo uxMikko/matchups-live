@@ -1,5 +1,5 @@
 // GET /api/state — returns all live state in one call
-// Reads 5 Redis keys from Upstash, returns combined JSON.
+// Reads 10 Redis keys from Upstash, returns combined JSON.
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -19,10 +19,10 @@ export async function handler() {
     return { statusCode: 503, body: JSON.stringify({ error: "Redis not configured" }) };
   }
 
-  const keys = ["standings", "bracket", "live_matches", "thirds_race", "last_updated"];
+  const keys = ["standings", "bracket", "live_matches", "thirds_race", "predicted_standings", "predicted_bracket", "predicted_thirds_race", "fixture_probs", "elo_ratings", "last_updated"];
 
   try {
-    const [standings, bracket, live_matches, thirds_race, last_updated] =
+    const [standings, bracket, live_matches, thirds_race, predicted_standings, predicted_bracket, predicted_thirds_race, fixture_probs, elo_ratings, last_updated] =
       await Promise.all(keys.map(rget));
 
     return {
@@ -37,6 +37,11 @@ export async function handler() {
         bracket: bracket || [],
         live_matches: live_matches || [],
         thirds_race: thirds_race || [],
+        predicted_standings: predicted_standings || {},
+        predicted_bracket: predicted_bracket || [],
+        predicted_thirds_race: predicted_thirds_race || [],
+        fixture_probs: fixture_probs || [],
+        elo_ratings: elo_ratings || {},
         last_updated: last_updated || null,
       }),
     };

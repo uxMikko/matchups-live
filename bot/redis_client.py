@@ -59,11 +59,20 @@ async def redis_mget(keys: list[str]) -> dict:
     return results
 
 
-async def push_state(standings, bracket, live_matches, thirds_race):
-    """Write all 5 Redis keys atomically-ish."""
+async def push_state(
+    standings, bracket, live_matches, thirds_race,
+    predicted_standings, predicted_bracket, predicted_thirds_race,
+    fixture_probs, elo_ratings,
+):
+    """Write all 10 Redis keys atomically-ish."""
     import time
     await redis_set("standings", standings)
     await redis_set("bracket", bracket)
     await redis_set("live_matches", live_matches)
     await redis_set("thirds_race", thirds_race)
+    await redis_set("predicted_standings", predicted_standings)
+    await redis_set("predicted_bracket", predicted_bracket)
+    await redis_set("predicted_thirds_race", predicted_thirds_race)
+    await redis_set("fixture_probs", fixture_probs)
+    await redis_set("elo_ratings", elo_ratings)
     await redis_set("last_updated", int(time.time()))

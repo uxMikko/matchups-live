@@ -19,6 +19,57 @@ const NAME_FROM_ESPN = {
 };
 const teamName = (espnName) => NAME_FROM_ESPN[espnName] || espnName;
 
+// Official FIFA group-stage match numbers (1-72), from FIFA's own published
+// match schedule PDF (FWC26 Match Schedule_v17_10042026_EN) — NOT derivable
+// from chronological kickoff order (verified against the PDF: e.g. Curaçao
+// v Ecuador is match 34, which kicks off *before* match 36 Tunisia v Japan
+// despite both happening the same day — the numbering follows FIFA's fixed
+// schedule slot, not pure time order). Keyed by group + both team names
+// sorted, so lookup doesn't care which side ESPN lists as home/away.
+const GROUP_MATCH_NUMBER = {};
+function registerMatchNumber(number, group, teamA, teamB) {
+  const key = `${group}|${[teamA, teamB].sort().join("|")}`;
+  GROUP_MATCH_NUMBER[key] = number;
+}
+[
+  [1, "A", "Mexico", "South Africa"], [2, "A", "South Korea", "Czech Republic"],
+  [3, "B", "Canada", "Bosnia-Herzegovina"], [4, "D", "USA", "Paraguay"],
+  [5, "C", "Haiti", "Scotland"], [6, "D", "Australia", "Turkey"],
+  [7, "C", "Brazil", "Morocco"], [8, "B", "Qatar", "Switzerland"],
+  [9, "E", "Ivory Coast", "Ecuador"], [10, "E", "Germany", "Curacao"],
+  [11, "F", "Netherlands", "Japan"], [12, "F", "Sweden", "Tunisia"],
+  [13, "H", "Saudi Arabia", "Uruguay"], [14, "H", "Spain", "Cape Verde"],
+  [15, "G", "Iran", "New Zealand"], [16, "G", "Belgium", "Egypt"],
+  [17, "I", "France", "Senegal"], [18, "I", "Iraq", "Norway"],
+  [19, "J", "Argentina", "Algeria"], [20, "J", "Austria", "Jordan"],
+  [21, "L", "Ghana", "Panama"], [22, "L", "England", "Croatia"],
+  [23, "K", "Portugal", "DR Congo"], [24, "K", "Uzbekistan", "Colombia"],
+  [25, "A", "Czech Republic", "South Africa"], [26, "B", "Switzerland", "Bosnia-Herzegovina"],
+  [27, "B", "Canada", "Qatar"], [28, "A", "Mexico", "South Korea"],
+  [29, "C", "Brazil", "Haiti"], [30, "C", "Scotland", "Morocco"],
+  [31, "D", "Turkey", "Paraguay"], [32, "D", "USA", "Australia"],
+  [33, "E", "Germany", "Ivory Coast"], [34, "E", "Ecuador", "Curacao"],
+  [35, "F", "Netherlands", "Sweden"], [36, "F", "Tunisia", "Japan"],
+  [37, "H", "Uruguay", "Cape Verde"], [38, "H", "Spain", "Saudi Arabia"],
+  [39, "G", "Belgium", "Iran"], [40, "G", "New Zealand", "Egypt"],
+  [41, "I", "Norway", "Senegal"], [42, "I", "France", "Iraq"],
+  [43, "J", "Argentina", "Austria"], [44, "J", "Jordan", "Algeria"],
+  [45, "L", "England", "Ghana"], [46, "L", "Panama", "Croatia"],
+  [47, "K", "Portugal", "Uzbekistan"], [48, "K", "Colombia", "DR Congo"],
+  [49, "C", "Scotland", "Brazil"], [50, "C", "Morocco", "Haiti"],
+  [51, "B", "Switzerland", "Canada"], [52, "B", "Bosnia-Herzegovina", "Qatar"],
+  [53, "A", "Czech Republic", "Mexico"], [54, "A", "South Africa", "South Korea"],
+  [55, "E", "Curacao", "Ivory Coast"], [56, "E", "Ecuador", "Germany"],
+  [57, "F", "Japan", "Sweden"], [58, "F", "Tunisia", "Netherlands"],
+  [59, "D", "Turkey", "USA"], [60, "D", "Paraguay", "Australia"],
+  [61, "I", "Norway", "France"], [62, "I", "Senegal", "Iraq"],
+  [63, "G", "Egypt", "Iran"], [64, "G", "New Zealand", "Belgium"],
+  [65, "H", "Cape Verde", "Saudi Arabia"], [66, "H", "Uruguay", "Spain"],
+  [67, "L", "Panama", "England"], [68, "L", "Croatia", "Ghana"],
+  [69, "J", "Algeria", "Austria"], [70, "J", "Jordan", "Argentina"],
+  [71, "K", "Colombia", "Portugal"], [72, "K", "DR Congo", "Uzbekistan"],
+].forEach(([number, group, teamA, teamB]) => registerMatchNumber(number, group, teamA, teamB));
+
 function statusFrom(type) {
   if (type.completed || type.state === "post") return "ft";
   if (type.name === "STATUS_HALFTIME") return "ht";
@@ -51,14 +102,18 @@ export async function handler() {
       const awayC = comp.competitors.find((c) => c.homeAway === "away");
       const statusType = comp.status.type;
       const status = statusFrom(statusType);
+      const homeName = teamName(homeC.team.displayName);
+      const awayName = teamName(awayC.team.displayName);
+      const numberKey = `${m[1]}|${[homeName, awayName].sort().join("|")}`;
 
       // Every group-stage match (any status) goes into `all` — this backs
       // the "today's games" day-strip, which shows finished/live/upcoming
       // together. `live` stays scoped to live/ht/recent-ft only, since
       // that's what the standings live-overlay and ticker logic need.
       all.push({
-        home: teamName(homeC.team.displayName),
-        away: teamName(awayC.team.displayName),
+        number: GROUP_MATCH_NUMBER[numberKey] ?? null,
+        home: homeName,
+        away: awayName,
         home_score: status === "ns" ? null : parseInt(homeC.score, 10),
         away_score: status === "ns" ? null : parseInt(awayC.score, 10),
         status,
@@ -71,8 +126,8 @@ export async function handler() {
       if (status === "ft" && Date.now() - new Date(comp.date).getTime() > FT_DISPLAY_WINDOW_MS) continue;
 
       live.push({
-        home: teamName(homeC.team.displayName),
-        away: teamName(awayC.team.displayName),
+        home: homeName,
+        away: awayName,
         home_score: parseInt(homeC.score, 10),
         away_score: parseInt(awayC.score, 10),
         status,
@@ -81,13 +136,6 @@ export async function handler() {
         fetched_at: Date.now(),
       });
     }
-
-    // Real official match numbers (1-72) aren't exposed by ESPN, so they're
-    // derived the same way R32's 73-88 were verified: chronological order
-    // across the whole group stage. Stable across requests since it's a
-    // fixed, known kickoff schedule.
-    all.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
-    all.forEach((m, i) => { m.number = i + 1; });
 
     return {
       statusCode: 200,
