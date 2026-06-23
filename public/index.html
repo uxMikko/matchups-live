@@ -32,7 +32,7 @@
   <!-- TABS -->
   <div class="tab-nav">
     <button type="button" class="tab-btn active" data-tab="actual">Live Standings</button>
-    <button type="button" class="tab-btn" data-tab="predicted">Odds-Based Standings</button>
+    <button type="button" class="tab-btn" data-tab="predicted">Odds-Based Projection</button>
     <button type="button" class="tab-btn" data-tab="lab">Build Your Bracket</button>
   </div>
 
@@ -616,7 +616,7 @@ function teamRow(t, showProb = true) {
   </div>`;
 }
 
-// Shared by the Odds-Based Standings bracket and the Simulator bracket: a
+// Shared by the Odds-Based Projection bracket and the Simulator bracket: a
 // match number on the left, two stacked team rows on the right, each row's
 // right-hand slot showing the seed code ("1F") until a score exists, then
 // the score itself - no "vs" divider, no probability pill (neither tab
@@ -1024,7 +1024,7 @@ function renderPredictedThirds(thirds) {
 // Ported from bot/engine.py + bot/annex_c.py. The Lab needs to recompute
 // standings/bracket instantly on every edit with zero network round-trip,
 // so the deterministic parts of the real engine (no probabilities - same
-// idea as the Odds-Based Standings tab, just fed user-chosen scores instead
+// idea as the Odds-Based Projection tab, just fed user-chosen scores instead
 // of expected values) are duplicated here in JS rather than calling back
 // to Python. Keep this in sync with engine.py if the real tiebreak rules
 // or bracket structure ever change.
@@ -1878,7 +1878,7 @@ function labMatchKey(home, away) { return `${home}_${away}`; }
 // Whichever of win/draw/loss is most likely becomes the placeholder result
 // for a game the user hasn't scored - a minimal-margin win (1-0) or a 0-0
 // draw, whichever the odds favor. This seeds the Lab's baseline from the
-// same real odds/Elo data as the Odds-Based Standings tab, instead of an
+// same real odds/Elo data as the Odds-Based Projection tab, instead of an
 // uninformative 0-0 for every single remaining game.
 function labFavoredScore(probs) {
   if (!probs) return { home_score: 0, away_score: 0, outcome: "D" };
