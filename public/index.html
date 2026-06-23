@@ -107,6 +107,12 @@
       <div class="section-title">Group Standings (your scenario)</div>
       <div id="lab-standings-grid" class="groups-grid"></div>
     </div>
+
+    <!-- LAB THIRD-PLACE RACE -->
+    <div class="section">
+      <div class="section-title">Third-Place Race (your scenario)</div>
+      <div id="lab-thirds-list" class="thirds-list"></div>
+    </div>
   </div>
 
   <div id="lab-modal-backdrop" class="lab-modal-backdrop" style="display:none">
@@ -1981,6 +1987,7 @@ function labComputeAndRender() {
 
   renderLabBracket(bracket, laterRounds);
   renderLabStandings(standings, labLastMovedTeams);
+  renderLabThirds(standings, labLastMovedTeams);
   renderLabNotices();
   if (labOpenSlot) renderLabModal(labOpenSlot, bracket);
   if (labOpenLaterNumber) renderLabLaterModal(labOpenLaterNumber, laterRounds);
@@ -2092,6 +2099,10 @@ function renderLabStandings(standings, movedTeams) {
   const grid = document.getElementById("lab-standings-grid");
   const groups = "ABCDEFGHIJKL".split("");
   grid.innerHTML = groups.map(g => renderLabGroupTable(g, standings[g] || [], movedTeams)).join("");
+}
+
+function renderLabThirds(standings, movedTeams) {
+  document.getElementById("lab-thirds-list").innerHTML = renderLabThirdsTable(standings, movedTeams);
 }
 
 // Cross-group third-place ranking, same shape as renderLabGroupTable so it
@@ -2238,10 +2249,11 @@ function renderLabModal(slot, bracket) {
   pickEl.innerHTML = renderLabMatchupPick(m);
 
   const groups = [...new Set([m.home.group, m.away.group].filter(Boolean))];
-  const hasThird = m.home.pos === 3 || m.away.pos === 3;
-  const thirdColumn = hasThird
-    ? `<div class="lab-group-block">${renderLabThirdsTable(labLastStandings, labLastMovedTeams)}</div>`
-    : "";
+  // Always included, not just when one of these two teams is itself a
+  // 3rd-place qualifier - editing any group's scores can shift the
+  // cross-group 3rd-place ranking and bump a *different* group's 3rd-place
+  // team across the qualification line.
+  const thirdColumn = `<div class="lab-group-block">${renderLabThirdsTable(labLastStandings, labLastMovedTeams)}</div>`;
   const body = document.getElementById("lab-modal-body");
   body.innerHTML = `<div class="lab-modal-columns">${groups.map(g => renderLabGroupBlock(g)).join("")}${thirdColumn}</div>`;
 
