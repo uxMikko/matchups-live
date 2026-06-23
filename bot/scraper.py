@@ -98,6 +98,21 @@ def _status_from_espn(status_type: dict) -> str:
     return "unknown"
 
 
+# ESPN's "in progress" state covers more than just normal play - a
+# suspended/delayed match (weather, crowd trouble, etc.) is still state
+# "in" but its clock has actually stopped, frozen at whatever minute play
+# paused on. Showing that frozen minute as if it were a live, ticking
+# clock looks like a bug (a match stuck forever in 45+3' stoppage with no
+# indication anything's wrong) - so for these, show ESPN's own description
+# ("Delayed") instead, same as halftime/full-time already do. Mirrors
+# netlify/functions/live.js's clockIsRunning().
+_PAUSED_IN_PROGRESS_NAMES = {"STATUS_DELAYED", "STATUS_SUSPENDED", "STATUS_POSTPONED"}
+
+
+def _clock_is_running(status: str, status_type: dict) -> bool:
+    return status == "live" and status_type.get("name") not in _PAUSED_IN_PROGRESS_NAMES
+
+
 def _score_from_event(event: dict) -> MatchScore:
     comp = event["competitions"][0]
     home = next(c for c in comp["competitors"] if c["homeAway"] == "home")
@@ -116,7 +131,7 @@ def _score_from_event(event: dict) -> MatchScore:
     # "45'+5'" sits there through halftime, "90'+8'" through full-time), so
     # show ESPN's status description instead of the stale clock whenever the
     # match isn't actually being played right now.
-    if status == "live":
+    if _clock_is_running(status, status_type):
         minute = comp["status"].get("displayClock")
     else:
         minute = status_type.get("description")

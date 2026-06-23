@@ -19,10 +19,10 @@ export async function handler() {
     return { statusCode: 503, body: JSON.stringify({ error: "Redis not configured" }) };
   }
 
-  const keys = ["standings", "bracket", "live_matches", "thirds_race", "predicted_standings", "predicted_bracket", "predicted_thirds_race", "fixture_probs", "elo_ratings", "last_updated"];
+  const keys = ["standings", "bracket", "live_matches", "thirds_race", "predicted_standings", "predicted_bracket", "predicted_thirds_race", "fixture_probs", "elo_ratings", "real_odds", "last_updated"];
 
   try {
-    const [standings, bracket, live_matches, thirds_race, predicted_standings, predicted_bracket, predicted_thirds_race, fixture_probs, elo_ratings, last_updated] =
+    const [standings, bracket, live_matches, thirds_race, predicted_standings, predicted_bracket, predicted_thirds_race, fixture_probs, elo_ratings, real_odds, last_updated] =
       await Promise.all(keys.map(rget));
 
     return {
@@ -42,6 +42,7 @@ export async function handler() {
         predicted_thirds_race: predicted_thirds_race || [],
         fixture_probs: fixture_probs || [],
         elo_ratings: elo_ratings || {},
+        real_odds: real_odds || {},
         last_updated: last_updated || null,
       }),
     };

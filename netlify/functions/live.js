@@ -78,6 +78,19 @@ function statusFrom(type) {
   return "unknown";
 }
 
+// ESPN's "in progress" state covers more than just normal play - a
+// suspended/delayed match (weather, crowd trouble, etc.) is still
+// state "in" but its clock has actually stopped, frozen at whatever
+// minute play paused on. Showing that frozen minute as if it were a
+// live, ticking clock looks like a bug (a match stuck forever in 45+3'
+// stoppage with no indication anything's wrong) - so for these, show
+// ESPN's own description ("Delayed") instead, same as halftime/full-time
+// already do.
+const PAUSED_IN_PROGRESS_NAMES = new Set(["STATUS_DELAYED", "STATUS_SUSPENDED", "STATUS_POSTPONED"]);
+function clockIsRunning(status, type) {
+  return status === "live" && !PAUSED_IN_PROGRESS_NAMES.has(type.name);
+}
+
 // A finished match still gets returned (as status "ft") for a while after
 // the final whistle, so the frontend doesn't make it vanish instantly —
 // it keeps showing the final score until either a new match goes live or
@@ -117,7 +130,7 @@ export async function handler() {
         home_score: status === "ns" ? null : parseInt(homeC.score, 10),
         away_score: status === "ns" ? null : parseInt(awayC.score, 10),
         status,
-        minute: status === "live" ? comp.status.displayClock : statusType.description,
+        minute: clockIsRunning(status, statusType) ? comp.status.displayClock : statusType.description,
         group: m[1],
         kickoff: comp.date,
       });
@@ -131,7 +144,7 @@ export async function handler() {
         home_score: parseInt(homeC.score, 10),
         away_score: parseInt(awayC.score, 10),
         status,
-        minute: status === "live" ? comp.status.displayClock : statusType.description,
+        minute: clockIsRunning(status, statusType) ? comp.status.displayClock : statusType.description,
         group: m[1],
         fetched_at: Date.now(),
       });

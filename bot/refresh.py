@@ -72,6 +72,7 @@ async def main():
         predicted["thirds_race"],
         fixture_probs,
         forecast.ELO_RATINGS,
+        forecast.REAL_ODDS,
     )
     log.info(f"Refreshed: {len(results)} results loaded, {len(live_matches)} live now")
 
