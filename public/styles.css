@@ -278,12 +278,6 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .lab-score-input:focus {
   outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.18);
 }
-.lab-clear-btn {
-  background: none; border: 1px solid var(--border); border-radius: 5px;
-  font-size: 10px; font-weight: 700; color: var(--muted); cursor: pointer;
-  padding: 1px 6px; margin-left: 6px;
-}
-.lab-clear-btn:hover { color: #15151a; border-color: #15151a; }
 
 .lab-matchup-pick { margin: 0; padding: 0; border: none; }
 .lab-matchup-pick-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
