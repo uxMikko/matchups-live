@@ -87,6 +87,7 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .today-team-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .today-team-score { font-size: 16px; font-weight: 800; }
 .today-team-score.live { color: var(--red); }
+.today-card-odds { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
 
 /* Bracket tree: column 1 = the 16 real R32 matches (one per row), columns
    2-5 = TBD placeholders for R16/QF/SF/Final, each centered across the rows
@@ -192,6 +193,20 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
   align-self: flex-end;
 }
 .lab-reset-btn:hover { background: #f4f4f6; }
+.futures-bet-banner {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; margin-top: 16px; text-align: center;
+}
+.futures-bet-text { font-size: 13px; }
+.futures-bet-actions { display: flex; gap: 10px; }
+.futures-bet-btn {
+  background: #15151a; color: #fff; border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 700; padding: 7px 14px; cursor: pointer;
+}
+.futures-bet-btn:hover { background: #2a2a33; }
+.futures-bet-disclosure { font-size: 10px; color: var(--muted); line-height: 1.5; }
+.futures-bet-disclosure a { color: var(--muted); text-decoration: underline; }
 
 .lab-tree {
   /* Fixed (not 1fr) so columns size to their content instead of stretching
@@ -257,6 +272,60 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 @media (max-width: 600px) {
   .lab-modal-columns > .lab-group-block { flex-basis: 100%; }
 }
+
+/* Odds badge - the only "betting content" visible pre-age-confirmation;
+   deliberately plain text, no figures, no bookmaker branding. */
+.odds-badge {
+  background: #eef2ff; color: #3b4a8a; border: 1px solid #dbe3fb; border-radius: 6px;
+  font-size: 10px; font-weight: 700; padding: 2px 7px; cursor: pointer; flex-shrink: 0;
+}
+.odds-badge:hover { background: #dbe3fb; }
+
+/* Age gate - reuses .lab-modal-backdrop's overlay, its own narrower card. */
+.age-gate-modal {
+  background: #fff; border-radius: 12px; width: 100%; max-width: 420px;
+  padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.age-gate-title { font-size: 16px; font-weight: 800; margin-bottom: 10px; }
+.age-gate-text { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+.age-gate-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.age-gate-cancel-btn {
+  background: #fff; color: #15151a; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; font-weight: 700; padding: 8px 16px; cursor: pointer;
+}
+.age-gate-confirm-btn {
+  background: #15151a; color: #fff; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 700; padding: 8px 16px; cursor: pointer;
+}
+.age-gate-confirm-btn:hover { background: #2a2a33; }
+
+/* Odds modal */
+.odds-modal {
+  background: #fff; border-radius: 12px; width: 100%; max-width: 480px;
+  max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.odds-modal-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.odds-modal-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 12px 0; }
+.bookie-row { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.bookie-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.bookie-name { font-size: 14px; font-weight: 800; }
+.bookie-link {
+  background: #15151a; color: #fff; border-radius: 6px; font-size: 11px; font-weight: 700;
+  padding: 6px 12px; flex-shrink: 0;
+}
+.bookie-link:hover { background: #2a2a33; }
+.bookie-odds-cells { display: flex; gap: 8px; }
+.bookie-odds-cell {
+  flex: 1; background: var(--surface); border-radius: 6px; padding: 6px 4px;
+  text-align: center;
+}
+.bookie-odds-label { display: block; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.bookie-odds-value { display: block; font-size: 15px; font-weight: 800; margin-top: 2px; }
+.odds-modal-disclosure {
+  font-size: 10px; color: var(--muted); line-height: 1.5; padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+.odds-modal-disclosure a { color: var(--muted); text-decoration: underline; }
 
 .lab-group-block { margin-bottom: 18px; }
 .lab-group-block .group-card { margin-bottom: 8px; }
