@@ -120,7 +120,19 @@
       </div>
       <div id="lab-modal-body" class="lab-modal-body"></div>
       <div class="lab-modal-footer">
-        <button type="button" id="lab-modal-done" class="lab-modal-done-btn">Done</button>
+        <button type="button" id="lab-modal-done" class="lab-modal-done-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lab-quit-confirm-backdrop" class="lab-modal-backdrop" style="display:none; z-index:60">
+    <div class="age-gate-modal">
+      <div class="age-gate-title">Quit without saving?</div>
+      <p class="age-gate-text">Are you sure you want to quit without saving? Any changes you made in this matchup will be lost.</p>
+      <div class="age-gate-actions">
+        <button type="button" id="lab-quit-keep-editing" class="age-gate-cancel-btn">Keep editing</button>
+        <button type="button" id="lab-quit-close" class="age-gate-cancel-btn">Close</button>
+        <button type="button" id="lab-quit-save-close" class="age-gate-confirm-btn">Save and close</button>
       </div>
     </div>
   </div>
@@ -580,7 +592,7 @@ function detectChanges(newBracket) {
       prev.away?.team !== match.away?.team;
     if (changed) updatedSlots.add(match.slot);
   }
-  setTimeout(() => updatedSlots.clear(), 120000); // clear after 2 min
+  setTimeout(() => updatedSlots.clear(), 360000); // clear after 6 min
 }
 
 function teamRow(t, showProb = true) {
@@ -2113,27 +2125,72 @@ function renderLabThirdsTable(standings, movedTeams) {
 }
 
 // ── LAB MODAL: contextual editor for one R32 matchup ──────────────────────────
+// Edits apply live (each keystroke recomputes the whole bracket) so the
+// user can see the downstream effect as they type - but "quit without
+// saving" still needs something to revert to, so a snapshot of every
+// override store is taken the moment the modal opens.
+let labModalSnapshot = null;
+function snapshotLabOverrides() {
+  return JSON.parse(JSON.stringify({
+    group: labGroupOverrides, r32: labR32Overrides, r32ScoredFor: labR32ScoredFor,
+    later: labLaterOverrides, laterScoredFor: labLaterScoredFor,
+  }));
+}
+function restoreLabOverrides(snap) {
+  labGroupOverrides = snap.group;
+  labR32Overrides = snap.r32;
+  labR32ScoredFor = snap.r32ScoredFor;
+  labLaterOverrides = snap.later;
+  labLaterScoredFor = snap.laterScoredFor;
+}
+function labOverridesChangedSinceSnapshot() {
+  return JSON.stringify(snapshotLabOverrides()) !== JSON.stringify(labModalSnapshot);
+}
+
 function openLabModal(slot) {
   labOpenSlot = slot;
   labOpenLaterNumber = null;
+  labModalSnapshot = snapshotLabOverrides();
   document.getElementById("lab-modal-backdrop").style.display = "flex";
   labComputeAndRender();
 }
 function openLabLaterModal(matchNumber) {
   labOpenLaterNumber = matchNumber;
   labOpenSlot = null;
+  labModalSnapshot = snapshotLabOverrides();
   document.getElementById("lab-modal-backdrop").style.display = "flex";
   labComputeAndRender();
 }
 function closeLabModal() {
   labOpenSlot = null;
   labOpenLaterNumber = null;
+  labModalSnapshot = null;
   document.getElementById("lab-modal-backdrop").style.display = "none";
 }
-document.getElementById("lab-modal-close").addEventListener("click", closeLabModal);
+function requestCloseLabModal() {
+  if (!labModalSnapshot || !labOverridesChangedSinceSnapshot()) {
+    closeLabModal();
+    return;
+  }
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "flex";
+}
+document.getElementById("lab-modal-close").addEventListener("click", requestCloseLabModal);
 document.getElementById("lab-modal-done").addEventListener("click", closeLabModal);
 document.getElementById("lab-modal-backdrop").addEventListener("click", (e) => {
-  if (e.target.id === "lab-modal-backdrop") closeLabModal();
+  if (e.target.id === "lab-modal-backdrop") requestCloseLabModal();
+});
+document.getElementById("lab-quit-keep-editing").addEventListener("click", () => {
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "none";
+});
+document.getElementById("lab-quit-close").addEventListener("click", () => {
+  restoreLabOverrides(labModalSnapshot);
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "none";
+  closeLabModal();
+  labComputeAndRender();
+});
+document.getElementById("lab-quit-save-close").addEventListener("click", () => {
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "none";
+  closeLabModal();
 });
 
 // The modal fully re-renders on every keystroke (live recompute can change
@@ -2226,7 +2283,6 @@ function renderLabFixtureRow(m) {
     </div>`;
   }
 
-  const key = labMatchKey(m.home, m.away);
   const r = labResultFor(m);
   const isLive = m.status === "live" || m.status === "ht";
   const minHome = isLive ? m.home_score : 0;
@@ -2234,8 +2290,7 @@ function renderLabFixtureRow(m) {
   const homeShown = r.mode === "predicted" ? "" : r.home_score;
   const awayShown = r.mode === "predicted" ? "" : r.away_score;
   const statusLabel = isLive ? `<span class="lab-live-dot"></span>Live now` : "";
-  const clearBtn = r.mode === "edited" ? `<button type="button" class="lab-clear-btn" data-clear="${key}">Clear</button>` : "";
-  const topRow = (statusLabel || clearBtn) ? `<div class="lab-fixture-top">${statusLabel}${clearBtn}</div>` : "";
+  const topRow = statusLabel ? `<div class="lab-fixture-top">${statusLabel}</div>` : "";
 
   return `<div class="lab-fixture-row ${r.mode}">
     ${topRow}
@@ -2275,12 +2330,6 @@ function wireLabFixtureInputs(container) {
       );
       existing[`${input.dataset.side}_score`] = val;
       labGroupOverrides[key] = existing;
-      labComputeAndRender();
-    });
-  });
-  container.querySelectorAll("[data-clear]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      delete labGroupOverrides[btn.dataset.clear];
       labComputeAndRender();
     });
   });

@@ -288,7 +288,7 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 }
 .age-gate-title { font-size: 16px; font-weight: 800; margin-bottom: 10px; }
 .age-gate-text { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
-.age-gate-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.age-gate-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 .age-gate-cancel-btn {
   background: #fff; color: #15151a; border: 1px solid var(--border); border-radius: 8px;
   font-size: 13px; font-weight: 700; padding: 8px 16px; cursor: pointer;
@@ -347,12 +347,6 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .lab-score-input:focus {
   outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.18);
 }
-.lab-clear-btn {
-  background: none; border: 1px solid var(--border); border-radius: 5px;
-  font-size: 10px; font-weight: 700; color: var(--muted); cursor: pointer;
-  padding: 1px 6px; margin-left: 6px;
-}
-.lab-clear-btn:hover { color: #15151a; border-color: #15151a; }
 
 .lab-matchup-pick { margin: 0; padding: 0; border: none; }
 .lab-matchup-pick-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
