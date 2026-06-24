@@ -61,6 +61,7 @@
   <div id="tab-actual" class="tab-panel">
     <!-- BRACKET -->
     <div class="section">
+      <div class="info-bubble"><span class="icon">ⓘ</span>Clasificación de grupos y bracket en vivo, según los resultados reales hasta el momento</div>
       <div id="bracket-spinner" class="spinner">Cargando el bracket…</div>
       <div class="bracket-tree-wrap">
         <div id="bracket-grid" class="bracket-tree" style="display:none"></div>
@@ -83,6 +84,7 @@
   <div id="tab-predicted" class="tab-panel" style="display:none">
     <!-- PREDICTED BRACKET -->
     <div class="section">
+      <div class="info-bubble"><span class="icon">ⓘ</span>Cómo terminarían la fase de grupos y el bracket si las probabilidades de cada equipo se cumplieran exactamente</div>
       <div id="predicted-bracket-spinner" class="spinner">Cargando el bracket…</div>
       <div class="bracket-tree-wrap">
         <div id="predicted-bracket-grid" class="bracket-tree" style="display:none"></div>
@@ -106,8 +108,8 @@
     <div id="lab-notifications" class="lab-notifications"></div>
     <div class="section">
       <div class="lab-section-head">
-        <div class="lab-info-bubble"><span class="icon">ⓘ</span>Haz clic en cualquier partido para editar su resultado y recalcular todos los partidos siguientes</div>
-        <button type="button" id="lab-reset-btn" class="lab-reset-btn">Reiniciar todas las predicciones</button>
+        <div id="lab-info-bubble" class="info-bubble"><span class="icon">ⓘ</span>Haz clic en cualquier partido para editar su resultado y recalcular todos los partidos siguientes</div>
+        <button type="button" id="lab-reset-btn" class="lab-reset-btn" style="display:none">Reiniciar todas las predicciones</button>
       </div>
       <div class="bracket-tree-wrap">
         <div id="lab-bracket-grid" class="bracket-tree lab-tree"></div>

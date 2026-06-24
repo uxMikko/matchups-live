@@ -1885,9 +1885,24 @@ function labComputeAndRender() {
   renderLabStandings(standings, labLastMovedTeams);
   renderLabThirds(standings, labLastMovedTeams);
   renderLabNotices();
+  updateLabBannerState();
   if (labOpenSlot) renderLabModal(labOpenSlot, bracket);
   if (labOpenLaterNumber) renderLabLaterModal(labOpenLaterNumber, laterRounds);
   labInitialized = true;
+}
+
+// The reset button only matters once there's something to reset - before
+// that it's dead weight next to the bubble explaining what to do. Once an
+// edit exists, it takes the bubble's exact slot (same box shape - see
+// .lab-reset-btn.standalone) rather than appearing as a second control.
+function updateLabBannerState() {
+  const hasEdits = Object.keys(labGroupOverrides).length > 0
+    || Object.keys(labR32Overrides).length > 0
+    || Object.keys(labLaterOverrides).length > 0;
+  document.getElementById("lab-info-bubble").style.display = hasEdits ? "none" : "flex";
+  const resetBtn = document.getElementById("lab-reset-btn");
+  resetBtn.style.display = hasEdits ? "block" : "none";
+  resetBtn.classList.toggle("standalone", hasEdits);
 }
 
 function renderLabBracket(bracket, laterRounds) {

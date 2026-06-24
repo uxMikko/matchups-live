@@ -26,6 +26,13 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 /* Sections */
 .section { padding: 20px 8px 8px; }
 .section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+/* The first section right under the tab nav doesn't need the full 20px -
+   that gap was designed for section-to-section spacing, not tab-to-content. */
+.tab-panel > .section:first-child { padding-top: 10px; }
+/* Empty on most loads (no active notices) - margin-bottom on an empty box
+   still pushes the next element down, which was adding dead space above
+   the bracket on every tab that uses it (currently just Build Your Bracket). */
+.lab-notifications:empty { margin-bottom: 0; }
 
 /* Tabs — styled like real file/browser tabs: inactive tabs sit on a grey
    background behind the nav's bottom rule, the active tab is white and
@@ -180,19 +187,30 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
    (ported to JS, see the LAB_* section of the script), just fed
    user-edited and odds-predicted results instead of real ones. */
 .lab-section-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
-.lab-info-bubble {
+.info-bubble {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   background: #eef2ff; color: #3b4a8a; border: 1px solid #dbe3fb;
   border-radius: 10px; padding: 8px 14px; font-size: 12px; font-weight: 600;
   width: 100%; text-align: center;
 }
-.lab-info-bubble .icon { font-size: 13px; }
+.info-bubble .icon { font-size: 13px; }
+/* Only when the bubble sits directly in a .section (Live Standings / Odds-
+   Based Projection) - inside .lab-section-head's own flex gap already
+   spaces it from what follows, adding this there would double up. */
+.section > .info-bubble:first-child { margin-bottom: 12px; }
 .lab-reset-btn {
   background: #fff; color: #15151a; border: 1px solid var(--border); border-radius: 6px;
   font-size: 11px; font-weight: 700; padding: 5px 10px; cursor: pointer; flex-shrink: 0;
   align-self: flex-end;
 }
 .lab-reset-btn:hover { background: #f4f4f6; }
+/* Replaces the info bubble once at least one edit exists - same box shape
+   as .info-bubble (full width, centered) so it visually "takes over" that
+   slot instead of looking like a second, smaller control underneath it. */
+.lab-reset-btn.standalone {
+  width: 100%; align-self: stretch; padding: 8px 14px; font-size: 12px;
+  border-radius: 10px;
+}
 .futures-bet-banner {
   display: flex; flex-direction: column; align-items: center; gap: 10px;
   background: #fff; border: 1px solid var(--border); border-radius: 10px;
