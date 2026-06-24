@@ -103,8 +103,8 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .bracket-tree {
   display: grid;
   grid-template-columns: 230px 160px 160px 150px 150px;
-  grid-template-rows: 22px repeat(16, minmax(92px, auto));
-  grid-auto-rows: minmax(92px, auto);
+  grid-template-rows: 22px repeat(16, auto);
+  grid-auto-rows: auto;
   gap: 2px 16px;
   min-width: 920px;
 }
