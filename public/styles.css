@@ -18,6 +18,21 @@ a { color: var(--blue); text-decoration: none; }
 header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .site-logo { height: 22px; width: auto; display: block; }
 #last-updated { font-size: 12px; color: var(--muted); }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.lang-switch {
+  font-size: 12px; font-weight: 700; color: var(--muted); text-decoration: none;
+  border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px;
+}
+.lang-switch:hover { background: #f4f4f6; color: #15151a; }
+.refresh-btn {
+  font-size: 14px; line-height: 1; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px; background: #fff;
+  padding: 3px 7px; cursor: pointer;
+}
+.refresh-btn:hover { background: #f4f4f6; color: #15151a; }
+.refresh-btn:disabled { cursor: default; opacity: 0.6; }
+.refresh-btn.spinning { animation: refresh-spin 0.6s linear infinite; }
+@keyframes refresh-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* Page headline — descriptive, plain-text mention of the tournament (not a
    logo/crest treatment), so the page actually says what it's tracking. */
@@ -230,16 +245,6 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .futures-bet-disclosure { font-size: 10px; color: var(--muted); line-height: 1.5; }
 .futures-bet-disclosure a { color: var(--muted); text-decoration: underline; }
 
-.lab-tree {
-  /* Fixed (not 1fr) so columns size to their content instead of stretching
-     to fill leftover width on wide screens - the cards were ending up much
-     wider than the flag+name+seed inside them actually needed. */
-  grid-template-columns: repeat(5, 190px);
-  grid-template-rows: 30px repeat(16, auto);
-  grid-auto-rows: auto;
-  gap: 2px 4px;
-  min-width: 0;
-}
 .lab-card { cursor: pointer; }
 .lab-card:hover { border-color: #b4b8c2; }
 .lab-card.lab-flash, .lab-modal-sticky.lab-flash { animation: pulse-border 1.4s ease-out; }

@@ -39,7 +39,7 @@ const I18N = {
     round_r16_singular: "Round of 16", round_qf_singular: "Quarterfinal",
     round_sf_singular: "Semifinal", round_bronze_singular: "Bronze Final",
     updating_badge: "UPDATING", mp: "MP", gd: "GD", pts: "Pts", prob: "Prob",
-    updated_just_now: "Updated just now",
+    updated_just_now: "Updated just now", refresh_now: "Refresh now",
     match_label: "Match", thirds_race_short: "3rd-Place Race", thirds_race: "Third-Place Race",
     thirds_race_odds: "Odds-Based Third-Place Race", live_now: "Live now",
     tie_note: "Tied — who wins on penalties?",
@@ -55,7 +55,7 @@ const I18N = {
     round_r16_singular: "Octavos de Final", round_qf_singular: "Cuarto de Final",
     round_sf_singular: "Semifinal", round_bronze_singular: "Tercer Puesto",
     updating_badge: "ACTUALIZANDO", mp: "PJ", gd: "DG", pts: "Pts", prob: "Prob",
-    updated_just_now: "Actualizado justo ahora",
+    updated_just_now: "Actualizado justo ahora", refresh_now: "Actualizar ahora",
     match_label: "Partido", thirds_race_short: "Terceros Lugares", thirds_race: "Carrera por el Tercer Lugar",
     thirds_race_odds: "Terceros Lugares Proyectados", live_now: "En vivo",
     tie_note: "Empate — ¿quién gana en penales?",
@@ -2564,6 +2564,30 @@ fetchVisitorGeo();
 setInterval(fetchState, 60000);
 setInterval(tickTodayStatuses, 1000); // local clock tick, no fetch, no DOM rebuild
 setInterval(() => renderLastUpdated(cachedState.last_updated), 30000);
+
+// Browsers throttle or fully suspend setInterval/setTimeout on a
+// backgrounded or sleeping tab - left open overnight, the page can sit
+// frozen on whatever it last fetched with no timer left to notice. Force
+// an immediate refetch the moment the tab is actually looked at again,
+// instead of waiting on a timer that may not have run in hours.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  fetchState();
+  clearTimeout(liveFetchTimer);
+  fetchLive();
+});
+
+function refreshNow() {
+  const btn = document.getElementById("refresh-btn");
+  btn.disabled = true;
+  btn.classList.add("spinning");
+  clearTimeout(liveFetchTimer);
+  Promise.all([fetchState(), fetchLive()]).finally(() => {
+    btn.disabled = false;
+    btn.classList.remove("spinning");
+  });
+}
+document.getElementById("refresh-btn").addEventListener("click", refreshNow);
 
 // ── COOKIE CONSENT ────────────────────────────────────────────────────────────
 const COOKIE_CONSENT_KEY = "cookieConsent";
