@@ -405,15 +405,16 @@ function renderTodayStrip(allMatches) {
   windowMatches.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
   section.style.display = "block";
 
-  // Only the single next upcoming match gets a live countdown - every
-  // other not-yet-started card just shows its plain kickoff time.
-  const nextUpcoming = windowMatches.find(m => m.status !== "live" && m.status !== "ht" && m.status !== "ft");
+  // Every upcoming match sharing the *earliest* kickoff gets a live
+  // countdown, not just the first one in sort order - two matches often
+  // kick off at the exact same time, and both should count down together.
+  const nextKickoff = windowMatches.find(m => m.status !== "live" && m.status !== "ht" && m.status !== "ft")?.kickoff;
 
   container.innerHTML = windowMatches.map(m => {
     const isLive = m.status === "live" || m.status === "ht";
     const isFinished = m.status === "ft";
     const showScore = isLive || isFinished;
-    const isNextUpcoming = !isLive && !isFinished && nextUpcoming && m.number === nextUpcoming.number;
+    const isNextUpcoming = !isLive && !isFinished && nextKickoff && m.kickoff === nextKickoff;
 
     // One slot now carries both the status and whatever time is relevant
     // to it - live games show the ticking minute (red), the next upcoming
