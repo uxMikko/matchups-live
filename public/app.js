@@ -434,7 +434,7 @@ function renderTodayStrip(allMatches) {
       : "";
 
     return `
-    <div class="today-card${isLive ? " live" : ""}" data-number="${m.number}">
+    <div class="today-card${isLive ? " live" : ""}${isFinished ? " finished" : ""}" data-number="${m.number}">
       <div class="today-card-top">
         <span class="today-match-num">${m.number}</span>
         <span class="today-group">${tr("group_label")} ${m.group}</span>
