@@ -340,6 +340,18 @@ function formatKickoffTime(iso) {
   return `${hh}:${mm}`;
 }
 
+// Plain time for a card kicking off today (local calendar day), "Jun 25 -
+// 23:00" for anything later — the strip now scrolls across every remaining
+// match, not just today's, so a card several days out needs the date or
+// its time alone is meaningless.
+function formatKickoffTimeOrDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  if (d.toDateString() === new Date().toDateString()) return formatKickoffTime(iso);
+  const month = d.toLocaleString(undefined, { month: "short" });
+  return `${month} ${d.getDate()} - ${formatKickoffTime(iso)}`;
+}
+
 // Hours away ticks in whole minutes (no point churning seconds an hour
 // out); under an hour switches to a live MM:SS countdown, since that's
 // where a ticking clock actually feels worth watching.
@@ -354,12 +366,13 @@ function formatCountdown(iso) {
   return `${tr("countdown_in")} ${m}:${String(s).padStart(2, "0")}`;
 }
 
-// Shows every match within 24h either side of right now, rather than a
-// strict calendar day — a match that kicks off at 23:00 and runs past
-// midnight should still show, and so should one starting in a few hours
-// even if that's technically "tomorrow". Falls back to the single nearest
-// day's matches only on a rest day with literally nothing in that window.
-const TODAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+// Shows live games, every match still to come (no matter how far out —
+// scrolling further is fine, see formatKickoffTimeOrDate below for how a
+// card past today gets dated), and anything finished within the last 24h
+// so a just-played result doesn't vanish from the strip immediately.
+// Falls back to the single nearest day's matches only once the whole
+// tournament's done and there's nothing live/upcoming/recent left at all.
+const RECENT_FINISHED_WINDOW_MS = 24 * 60 * 60 * 1000;
 function renderTodayStrip(allMatches) {
   const section = document.getElementById("today-section");
   const container = document.getElementById("today-matches-container");
@@ -369,7 +382,11 @@ function renderTodayStrip(allMatches) {
   }
 
   const now = new Date();
-  let windowMatches = allMatches.filter(m => Math.abs(new Date(m.kickoff) - now) <= TODAY_WINDOW_MS);
+  let windowMatches = allMatches.filter(m => {
+    if (m.status === "live" || m.status === "ht") return true;
+    if (m.status === "ft") return (now - new Date(m.kickoff)) <= RECENT_FINISHED_WINDOW_MS;
+    return true; // every upcoming match, regardless of how far out
+  });
 
   if (windowMatches.length === 0) {
     let closest = null, bestDist = Infinity;
@@ -400,16 +417,17 @@ function renderTodayStrip(allMatches) {
 
     // One slot now carries both the status and whatever time is relevant
     // to it - live games show the ticking minute (red), the next upcoming
-    // game counts down to kickoff, every other upcoming game just shows
-    // its kickoff time, finished games just say "Finished" since there's
-    // no extra time worth a whole separate row for that.
+    // game counts down to kickoff, every other upcoming game shows its
+    // kickoff time (dated if it's not today, since the strip now scrolls
+    // across every remaining match), finished games just say "Finished"
+    // since there's no extra time worth a whole separate row for that.
     const statusLabel = isLive
       ? `<span class="today-status live"><span class="today-live-dot"></span>${tickingMinuteLabel(m)}</span>`
       : isFinished
         ? `<span class="today-status">${tr("finished")}</span>`
         : isNextUpcoming
           ? `<span class="today-status countdown">${formatCountdown(m.kickoff)}</span>`
-          : `<span class="today-status">${formatKickoffTime(m.kickoff)}</span>`;
+          : `<span class="today-status">${formatKickoffTimeOrDate(m.kickoff)}</span>`;
 
     const scoreSpan = (score) => showScore
       ? `<span class="today-team-score${isLive ? " live" : ""}">${score ?? ""}</span>`
