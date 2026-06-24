@@ -1771,22 +1771,21 @@ let labNoticeSeq = 0;
 
 function labMatchKey(home, away) { return `${home}_${away}`; }
 
-// Whichever of win/draw/loss is most likely becomes the placeholder result
-// for a game the user hasn't scored - a minimal-margin win (1-0) or a 0-0
-// draw, whichever the odds favor. This seeds the Lab's baseline from the
-// same real odds/Elo data as the Odds-Based Projection tab, instead of an
-// uninformative 0-0 for every single remaining game.
-function labFavoredScore(probs) {
-  if (!probs) return { home_score: 0, away_score: 0, outcome: "D" };
-  const { p_home, p_draw, p_away } = probs;
-  if (p_home >= p_draw && p_home >= p_away) return { home_score: 1, away_score: 0, outcome: "H" };
-  if (p_away >= p_draw && p_away >= p_home) return { home_score: 0, away_score: 1, outcome: "A" };
-  return { home_score: 0, away_score: 0, outcome: "D" };
+// The placeholder result for a game the user hasn't scored comes straight
+// from the backend's most-likely-group-scenario scoreline (see forecast.py
+// _most_likely_group_scenario / remaining_fixture_probs) - the same
+// concrete result the Odds-Based Projection tab's group order is built
+// from, not this single fixture's own favored outcome in isolation. Two
+// tabs, one scenario, same pairings.
+function labOutcomeFor(home_score, away_score) {
+  if (home_score > away_score) return "H";
+  if (away_score > home_score) return "A";
+  return "D";
 }
 
 // The effective result the Lab currently uses for one remaining group
 // game: a user-entered score takes priority, then (for a match already
-// kicked off) the real live score, then the odds-favored placeholder.
+// kicked off) the real live score, then the backend's predicted baseline.
 function labResultFor(m) {
   const key = labMatchKey(m.home, m.away);
   const ov = labGroupOverrides[key];
@@ -1795,8 +1794,9 @@ function labResultFor(m) {
     return { home_score: m.home_score, away_score: m.away_score, mode: "live" };
   }
   const probs = labFixtureProbs[key];
-  const fav = labFavoredScore(probs);
-  return { home_score: fav.home_score, away_score: fav.away_score, mode: "predicted", outcome: fav.outcome, probs };
+  const home_score = probs ? probs.home_score : 0;
+  const away_score = probs ? probs.away_score : 0;
+  return { home_score, away_score, mode: "predicted", outcome: labOutcomeFor(home_score, away_score), probs };
 }
 
 function labPushNotice(text) {

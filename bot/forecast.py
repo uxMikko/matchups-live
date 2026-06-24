@@ -215,63 +215,115 @@ def thirds_qualification_probabilities(
     return qualify_prob
 
 
+def _most_likely_group_scenario(
+    group: str, completed: list[dict], remaining: list[dict]
+) -> tuple[list["engine.TeamRecord"], dict[tuple[str, str], tuple[int, int]]]:
+    """The single real, achievable final standing for this group with the
+    highest total probability of actually happening — found by enumerating
+    every possible H/D/A combination for its remaining fixtures (same
+    enumeration as group_position_probabilities) and aggregating probability
+    by the *resulting order*, not by individual combo, since several
+    different scorelines can produce the same relative finishing order.
+
+    This is deliberately not the same as picking each fixture's own
+    most-likely outcome independently: a team with a lower single-match win
+    probability but a higher combined win-or-draw probability can still be
+    the team that's ahead in most real scenarios (a draw and an away win
+    can both leave the same team on top) — picking per-fixture favorites
+    misses that and can disagree with the true most-probable order.
+
+    Returns the chosen order's real TeamRecords (actual integer points/GD —
+    one concrete way the group could really finish, not an average) plus
+    the (home, away) -> (home_score, away_score) scoreline that produces
+    it, so callers needing a single concrete result per fixture (the Lab
+    tab's predicted baseline) use the exact same scenario as this group's
+    projected standing."""
+    if not remaining:
+        return engine.build_group_standings(group, completed), {}
+
+    fixture_probs = [_match_probs(m["home"], m["away"]) for m in remaining]
+    order_weight: dict[tuple, float] = {}
+    order_best: dict[tuple, tuple[float, tuple]] = {}
+
+    for combo in iproduct("HDA", repeat=len(remaining)):
+        weight = 1.0
+        hypothetical = list(completed)
+        for fixture, probs, outcome in zip(remaining, fixture_probs, combo):
+            weight *= probs[outcome]
+            hs, as_ = _OUTCOME_SCORES[outcome]
+            hypothetical.append({
+                "home": fixture["home"], "away": fixture["away"],
+                "group": group, "home_score": hs, "away_score": as_,
+            })
+        order = tuple(r.name for r in engine.build_group_standings(group, hypothetical))
+        order_weight[order] = order_weight.get(order, 0.0) + weight
+        if weight > order_best.get(order, (0.0, None))[0]:
+            order_best[order] = (weight, combo)
+
+    best_order = max(order_weight.items(), key=lambda kv: kv[1])[0]
+    _, best_combo = order_best[best_order]
+
+    hypothetical = list(completed)
+    fixture_scores: dict[tuple[str, str], tuple[int, int]] = {}
+    for fixture, outcome in zip(remaining, best_combo):
+        hs, as_ = _OUTCOME_SCORES[outcome]
+        hypothetical.append({
+            "home": fixture["home"], "away": fixture["away"],
+            "group": group, "home_score": hs, "away_score": as_,
+        })
+        fixture_scores[(fixture["home"], fixture["away"])] = (hs, as_)
+
+    return engine.build_group_standings(group, hypothetical), fixture_scores
+
+
 def predicted_final_standings(
     results: list[dict], matches: list[dict]
-) -> dict[str, list["engine.PredictedTeamRecord"]]:
-    """The "Predicted Outcome" tab's group tables: one single deterministic
-    final standing per group, not a probability spread. For each remaining
-    fixture, instead of enumerating every H/D/A outcome (like
-    group_position_probabilities does), this just adds its *expected*
-    points contribution — P(win)*3 + P(draw)*1 — straight onto each team's
-    current actual points. That's the "aggregate the odds across remaining
-    games" the user described, applied directly to points rather than to a
-    full win/draw/loss distribution per game.
+) -> dict[str, list["engine.TeamRecord"]]:
+    """The Odds-Based Projection tab's group tables: each group's single
+    most probable real final standing (see _most_likely_group_scenario) —
+    the achievable result with the highest total probability of actually
+    happening, not an expected-value average. Same underlying scenario
+    remaining_fixture_probs() hands the Lab tab as its predicted baseline,
+    so both tabs always agree on the same group order and R32 pairings.
 
     _match_probs() uses real bookmaker odds for any fixture the Odds API
     has priced, Elo otherwise (see forecast.py's module docstring).
     """
     completed_by_group, remaining_by_group = _split_completed_remaining(results, matches)
     predicted: dict[str, list] = {}
-
     for group in engine.GROUPS:
-        actual = engine.build_group_standings(group, completed_by_group[group])
-        expected_points = {r.name: float(r.points) for r in actual}
-        for fixture in remaining_by_group[group]:
-            probs = _match_probs(fixture["home"], fixture["away"])
-            expected_points[fixture["home"]] += probs["H"] * 3 + probs["D"]
-            expected_points[fixture["away"]] += probs["A"] * 3 + probs["D"]
-
-        records = [
-            engine.PredictedTeamRecord(
-                name=r.name, group=group, played=r.played, won=r.won, drawn=r.drawn,
-                lost=r.lost, goals_for=r.goals_for, goals_against=r.goals_against,
-                yellow_cards=r.yellow_cards, red_cards=r.red_cards,
-                predicted_points=round(expected_points[r.name], 1),
-            )
-            for r in actual
-        ]
-        records.sort(key=lambda r: r.sort_key())
+        records, _ = _most_likely_group_scenario(
+            group, completed_by_group[group], remaining_by_group[group]
+        )
         predicted[group] = records
-
     return predicted
 
 
 def remaining_fixture_probs(results: list[dict], matches: list[dict]) -> list[dict]:
-    """Per-fixture win/draw/loss probabilities for every group-stage match
-    that hasn't been played yet (live matches included - their fixture is
-    still "remaining" by this split even though it's already kicked off).
-    Used by the Lab tab to seed a concrete placeholder result (whichever
-    outcome is most likely) for any game the user hasn't manually scored
-    yet, instead of an uninformative, unweighted 0-0."""
-    _, remaining_by_group = _split_completed_remaining(results, matches)
+    """Per-fixture win/draw/loss probabilities, plus the concrete scoreline
+    consistent with that group's single most-likely real final order (see
+    _most_likely_group_scenario), for every group-stage match that hasn't
+    been played yet (live matches included - their fixture is still
+    "remaining" by this split even though it's already kicked off). Used by
+    the Lab tab to seed a baseline result for any game the user hasn't
+    manually scored yet — using the *group's* jointly most-likely order
+    here (instead of each fixture's own favored outcome in isolation) keeps
+    the Lab in sync with the Odds-Based Projection tab's pairings."""
+    completed_by_group, remaining_by_group = _split_completed_remaining(results, matches)
     out = []
     for group, fixtures in remaining_by_group.items():
+        if not fixtures:
+            continue
+        _, fixture_scores = _most_likely_group_scenario(group, completed_by_group[group], fixtures)
         for m in fixtures:
             probs = _match_probs(m["home"], m["away"])
+            hs, as_ = fixture_scores[(m["home"], m["away"])]
             out.append({
                 "home": m["home"], "away": m["away"], "group": group,
                 "p_home": round(probs["H"], 4),
                 "p_draw": round(probs["D"], 4),
                 "p_away": round(probs["A"], 4),
+                "home_score": hs,
+                "away_score": as_,
             })
     return out

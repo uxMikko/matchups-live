@@ -147,23 +147,6 @@ class TeamRecord:
         }
 
 
-@dataclass
-class PredictedTeamRecord(TeamRecord):
-    """A team's *predicted final* points total — current actual points plus
-    expected points (P(win)*3 + P(draw)*1) summed across remaining
-    fixtures — used for the "Predicted Outcome" tab. played/won/drawn/lost/
-    goals_for/goals_against stay at their real, current (not projected)
-    values: forecast.predicted_final_standings() only aggregates remaining-
-    fixture win/draw/loss probabilities into a points total, it doesn't
-    invent goals, so goal_diff/goals_for can't be projected the same way —
-    they're used as-is for tiebreaking until a real scoreline model exists."""
-    predicted_points: float = 0.0
-
-    @property
-    def points(self) -> float:
-        return self.predicted_points
-
-
 # ── STANDINGS ─────────────────────────────────────────────────────────────────
 def build_group_standings(group: str, results: list[dict]) -> list[TeamRecord]:
     """Standings for a single group, given results filtered/unfiltered (results
@@ -462,25 +445,20 @@ def compute_predicted_state(
     matches: list[dict],
     r32_kickoffs: dict | None = None,
 ) -> dict:
-    """The "Predicted Outcome" tab: every team ranked by its expected final
-    points (see forecast.predicted_final_standings — P(win)*3 + P(draw)*1
-    per remaining fixture, added to current actual points), producing one
-    single deterministic group order and the resulting R32 matchups — same
-    bracket shape/rendering as compute_state(), just fed a different
-    (projected) dataset.
+    """The "Predicted Outcome" tab: every group resolved to its single most
+    probable real final standing (see forecast.predicted_final_standings /
+    _most_likely_group_scenario — every possible H/D/A combination for the
+    remaining fixtures, weighted by real probability and aggregated by the
+    resulting order), producing one deterministic group order and the
+    resulting R32 matchups — same bracket shape/rendering as compute_state(),
+    just fed a different (projected) dataset.
 
     The standings payload here intentionally exposes only name + predicted
-    position, not points/GD/GF — expected points is a real, sound ranking
-    signal (it's literally the average outcome over every possible way the
-    remaining games could go), but it isn't a result anyone could actually
-    finish with (e.g. 7.3 points), so showing it as a fake stat line would
-    overstate precision the model doesn't have. This is also why this isn't
-    instead settled as a single win/draw/loss per fixture: that approach
-    all-but-eliminates draws (real bookmaker odds put draw as the single
-    most likely outcome in only ~3% of fixtures, vs. a real-world ~25% draw
-    rate), which would bias every projected group order toward decisive
-    results that don't reflect how often groups actually get separated by
-    a draw.
+    position, not points/GD/GF, even though those are now real achievable
+    numbers for this scenario (unlike the old expected-value model): the
+    Lab tab is the place a user inspects a concrete what-if scoreline, and
+    showing two numeric stat lines for the same projected order here would
+    just invite confusion about which one is "real."
 
     bracket stops at the 16 R32 matches, same as compute_state() - R16 and
     later are intentionally left as TBD rather than projected forward, since
