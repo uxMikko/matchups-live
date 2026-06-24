@@ -231,9 +231,9 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
      to fill leftover width on wide screens - the cards were ending up much
      wider than the flag+name+seed inside them actually needed. */
   grid-template-columns: repeat(5, 190px);
-  grid-template-rows: 30px repeat(16, minmax(74px, auto));
-  grid-auto-rows: minmax(74px, auto);
-  gap: 8px 4px;
+  grid-template-rows: 30px repeat(16, auto);
+  grid-auto-rows: auto;
+  gap: 2px 4px;
   min-width: 0;
 }
 .lab-card { cursor: pointer; }
