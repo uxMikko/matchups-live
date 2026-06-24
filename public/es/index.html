@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>matchups.live — Bracket en vivo del Mundial 2026</title>
+<meta name="description" content="Bracket en vivo de dieciseisavos de final de la Copa Mundial FIFA 2026. Se actualiza automáticamente con cada gol. Clasificación de grupos con línea de calificación y probabilidades de avance.">
+<link rel="canonical" href="https://matchups.live/es/">
+<link rel="alternate" hreflang="en" href="https://matchups.live/">
+<link rel="alternate" hreflang="es" href="https://matchups.live/es/">
+<link rel="alternate" hreflang="x-default" href="https://matchups.live/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://matchups.live/es/">
+<meta property="og:locale" content="es_ES">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:site_name" content="matchups.live">
+<meta property="og:title" content="matchups.live — Bracket en vivo del Mundial 2026">
+<meta property="og:description" content="Bracket en vivo de dieciseisavos de final de la Copa Mundial FIFA 2026. Se actualiza automáticamente con cada gol. Clasificación de grupos con línea de calificación y probabilidades de avance.">
+<meta property="og:image" content="https://matchups.live/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="matchups.live — Bracket en vivo del Mundial 2026">
+<meta name="twitter:description" content="Bracket en vivo de dieciseisavos de final de la Copa Mundial FIFA 2026. Se actualiza automáticamente con cada gol. Clasificación de grupos con línea de calificación y probabilidades de avance.">
+<meta name="twitter:image" content="https://matchups.live/og-image.png">
+
+<script>window.LANG = "es";</script>
+</head>
+<body>
+
+<header>
+  <img class="site-logo" src="/logo.svg" alt="matchups.live">
+  <div id="last-updated">Cargando…</div>
+</header>
+
+<div class="max-w">
+
+  <h1 class="page-headline">Partidos en vivo del Mundial 2026</h1>
+
+  <!-- TODAY'S GAMES -->
+  <div id="today-section" class="section">
+    <div class="section-title" id="today-section-title">Partidos de hoy</div>
+    <div class="today-strip-wrap">
+      <button class="today-nav-arrow left" id="today-arrow-left" aria-label="Desplazar a la izquierda">‹</button>
+      <div id="today-matches-container" class="today-strip"></div>
+      <button class="today-nav-arrow right" id="today-arrow-right" aria-label="Desplazar a la derecha">›</button>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tab-nav">
+    <button type="button" class="tab-btn active" data-tab="actual">Clasificación en Vivo</button>
+    <button type="button" class="tab-btn" data-tab="predicted">Proyección Basada en Cuotas</button>
+    <button type="button" class="tab-btn" data-tab="lab">Crea tu Bracket</button>
+  </div>
+
+  <div id="tab-actual" class="tab-panel">
+    <!-- BRACKET -->
+    <div class="section">
+      <div id="bracket-spinner" class="spinner">Cargando el bracket…</div>
+      <div class="bracket-tree-wrap">
+        <div id="bracket-grid" class="bracket-tree" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- GROUP STANDINGS -->
+    <div class="section">
+      <div class="section-title">Clasificación de Grupos</div>
+      <div id="standings-grid" class="groups-grid"></div>
+    </div>
+
+    <!-- THIRD-PLACE RACE -->
+    <div class="section" id="thirds-section" style="display:none">
+      <div class="section-title">Carrera por el Tercer Lugar</div>
+      <div id="thirds-list" class="thirds-list"></div>
+    </div>
+  </div>
+
+  <div id="tab-predicted" class="tab-panel" style="display:none">
+    <!-- PREDICTED BRACKET -->
+    <div class="section">
+      <div id="predicted-bracket-spinner" class="spinner">Cargando el bracket…</div>
+      <div class="bracket-tree-wrap">
+        <div id="predicted-bracket-grid" class="bracket-tree" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- PREDICTED GROUP STANDINGS -->
+    <div class="section">
+      <div class="section-title">Clasificación Final de Grupos (Basada en Cuotas)</div>
+      <div id="predicted-standings-grid" class="groups-grid"></div>
+    </div>
+
+    <!-- PREDICTED THIRD-PLACE RACE -->
+    <div class="section">
+      <div class="section-title">Terceros Lugares Proyectados</div>
+      <div id="predicted-thirds-list" class="thirds-list"></div>
+    </div>
+  </div>
+
+  <div id="tab-lab" class="tab-panel" style="display:none">
+    <div id="lab-notifications" class="lab-notifications"></div>
+    <div class="section">
+      <div class="lab-section-head">
+        <div class="lab-info-bubble"><span class="icon">ⓘ</span>Haz clic en cualquier partido para editar su resultado y recalcular todos los partidos siguientes</div>
+        <button type="button" id="lab-reset-btn" class="lab-reset-btn">Reiniciar todas las predicciones</button>
+      </div>
+      <div class="bracket-tree-wrap">
+        <div id="lab-bracket-grid" class="bracket-tree lab-tree"></div>
+      </div>
+      <div id="futures-bet-banner" class="futures-bet-banner" style="display:none">
+        <div class="futures-bet-text"><strong>¿Te gusta tu bracket?</strong> Respáldalo con una apuesta a futuro sobre el campeón del torneo.</div>
+        <div class="futures-bet-actions">
+          <button type="button" class="futures-bet-btn" data-bookie="unibet">Apostar en Unibet</button>
+          <button type="button" class="futures-bet-btn" data-bookie="betsson">Apostar en Betsson</button>
+        </div>
+        <div class="futures-bet-disclosure">
+          Publicidad — matchups.live puede recibir una comisión si te registras a través de estos enlaces, sin costo adicional para ti. Solo para mayores de 18 años. Por favor, juega con responsabilidad — <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a>.
+        </div>
+      </div>
+    </div>
+
+    <!-- LAB GROUP STANDINGS -->
+    <div class="section">
+      <div class="section-title">Clasificación de Grupos (tu escenario)</div>
+      <div id="lab-standings-grid" class="groups-grid"></div>
+    </div>
+
+    <!-- LAB THIRD-PLACE RACE -->
+    <div class="section">
+      <div class="section-title">Carrera por el Tercer Lugar (tu escenario)</div>
+      <div id="lab-thirds-list" class="thirds-list"></div>
+    </div>
+  </div>
+
+  <div id="lab-modal-backdrop" class="lab-modal-backdrop" style="display:none">
+    <div id="lab-modal" class="lab-modal">
+      <div class="lab-modal-sticky">
+        <div class="lab-modal-header">
+          <span id="lab-modal-title"></span>
+          <button type="button" id="lab-modal-close" class="lab-modal-close">✕</button>
+        </div>
+        <div id="lab-modal-pick"></div>
+      </div>
+      <div id="lab-modal-body" class="lab-modal-body"></div>
+      <div class="lab-modal-footer">
+        <button type="button" id="lab-modal-done" class="lab-modal-done-btn">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lab-quit-confirm-backdrop" class="lab-modal-backdrop" style="display:none; z-index:60">
+    <div class="confirm-modal">
+      <div class="confirm-modal-title">¿Salir sin guardar?</div>
+      <p class="confirm-modal-text">¿Seguro que quieres salir sin guardar? Se perderán los cambios que hiciste en este partido.</p>
+      <div class="confirm-modal-actions">
+        <button type="button" id="lab-quit-keep-editing" class="confirm-modal-btn-secondary">Seguir editando</button>
+        <button type="button" id="lab-quit-close" class="confirm-modal-btn-secondary">Cerrar</button>
+        <button type="button" id="lab-quit-save-close" class="confirm-modal-btn-primary">Guardar y cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <a class="coffee-card" href="https://buymeacoffee.com/uxmikko" target="_blank" rel="noopener noreferrer">
+      <img class="coffee-card-img" src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Cómprame un café">
+      <span>¿Disfrutas matchups.live? Apoya el proyecto.</span>
+    </a>
+  </div>
+
+</div>
+
+<div id="cookie-banner" class="cookie-banner" style="display:none">
+  <span class="cookie-text">Este sitio usa cookies para recordar tus preferencias y mejorar tu experiencia.</span>
+  <button type="button" id="cookie-accept-btn" class="cookie-accept-btn">Aceptar</button>
+</div>
+
+<!-- Shown once per browser, before any odds figures or bookmaker names
+     ever render - see bettingAgeConfirmed() in app.js. -->
+<div id="age-gate-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="age-gate-modal">
+    <div class="age-gate-title">Cuotas de apuestas</div>
+    <p class="age-gate-text">Debes tener 18 años o más (o la edad legal para apostar donde vives, si es mayor) para ver cuotas de apuestas o seguir un enlace a una casa de apuestas.</p>
+    <p class="age-gate-text">Si el juego te está causando daño a ti o a alguien que conoces, hay ayuda confidencial y gratuita disponible 24/7: <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a> · <a href="https://www.gamblingtherapy.org" target="_blank" rel="noopener noreferrer">Gambling Therapy</a> · 1-800-GAMBLER (EE. UU.).</p>
+    <div class="age-gate-actions">
+      <button type="button" id="age-gate-cancel" class="age-gate-cancel-btn">Cancelar</button>
+      <button type="button" id="age-gate-confirm" class="age-gate-confirm-btn">Tengo 18+, mostrar cuotas</button>
+    </div>
+  </div>
+</div>
+
+<div id="odds-modal-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="odds-modal">
+    <div class="lab-modal-header">
+      <span id="odds-modal-title"></span>
+      <button type="button" id="odds-modal-close" class="lab-modal-close">✕</button>
+    </div>
+    <div id="odds-modal-body" class="odds-modal-body"></div>
+    <div class="odds-modal-disclosure">
+      Publicidad — matchups.live puede recibir una comisión si te registras a través de estos enlaces, sin costo adicional para ti. Las cuotas mostradas eran precisas al momento de nuestra última actualización y pueden diferir del precio en vivo actual de cada operador. Solo para mayores de 18 años. Por favor, juega con responsabilidad — <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a>.
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

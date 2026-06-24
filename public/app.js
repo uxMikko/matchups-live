@@ -1,0 +1,2543 @@
+const TEAM_CODES = {
+  "Mexico":"mx", "South Korea":"kr", "South Africa":"za", "Czech Republic":"cz",
+  "Canada":"ca", "Switzerland":"ch", "Qatar":"qa", "Bosnia-Herzegovina":"ba",
+  "Brazil":"br", "Morocco":"ma", "Haiti":"ht", "Scotland":"gb-sct",
+  "USA":"us", "Paraguay":"py", "Australia":"au", "Turkey":"tr",
+  "Germany":"de", "Curacao":"cw", "Ivory Coast":"ci", "Ecuador":"ec",
+  "Netherlands":"nl", "Japan":"jp", "Sweden":"se", "Tunisia":"tn",
+  "Belgium":"be", "Egypt":"eg", "Iran":"ir", "New Zealand":"nz",
+  "Spain":"es", "Cape Verde":"cv", "Saudi Arabia":"sa", "Uruguay":"uy",
+  "France":"fr", "Senegal":"sn", "Norway":"no", "Iraq":"iq",
+  "Argentina":"ar", "Algeria":"dz", "Austria":"at", "Jordan":"jo",
+  "Portugal":"pt", "DR Congo":"cd", "Uzbekistan":"uz", "Colombia":"co",
+  "England":"gb-eng", "Croatia":"hr", "Ghana":"gh", "Panama":"pa",
+};
+function flagImg(team) {
+  const code = TEAM_CODES[team];
+  if (!code) return `<span class="flag-img" style="display:inline-block;background:#ddd"></span>`;
+  return `<img class="flag-img" src="/flags/${code}.svg" alt="">`;
+}
+
+// ── I18N ──────────────────────────────────────────────────────────────────────
+// LANG is set on `window` by a small inline script in each HTML file before
+// this one loads (index.html sets nothing -> defaults to "en"; es/index.html
+// sets window.LANG = "es") - one shared app.js, no per-language duplication
+// of any of the logic above or below this block. Backend-supplied strings
+// (engine.py's "1st Group A"-style placeholder labels for not-yet-resolved
+// bracket slots) are NOT covered here - that's a Python-side change, out of
+// scope for this frontend-only pass.
+const LANG = (typeof window !== "undefined" && window.LANG) || "en";
+const I18N = {
+  en: {
+    odds_badge: "Odds", bet_at: "Bet at",
+    bookie_home: "Home", bookie_draw: "Draw", bookie_away: "Away",
+    odds_unavailable: "Odds for this match aren't available right now.",
+    kicking_off: "Kicking off", countdown_in: "in",
+    finished: "Finished", group_label: "Group", tbd: "TBD",
+    round_r32: "Round of 32", round_r16: "Round of 16", round_qf: "Quarterfinals",
+    round_sf: "Semifinals", round_final: "Final",
+    round_r16_singular: "Round of 16", round_qf_singular: "Quarterfinal",
+    round_sf_singular: "Semifinal", round_bronze_singular: "Bronze Final",
+    updating_badge: "UPDATING", mp: "MP", gd: "GD", pts: "Pts", prob: "Prob",
+    updated_just_now: "Updated just now",
+    match_label: "Match", thirds_race_short: "3rd-Place Race", thirds_race: "Third-Place Race",
+    thirds_race_odds: "Odds-Based Third-Place Race", live_now: "Live now",
+    tie_note: "Tied — who wins on penalties?",
+  },
+  es: {
+    odds_badge: "Cuotas", bet_at: "Apostar en",
+    bookie_home: "Local", bookie_draw: "Empate", bookie_away: "Visitante",
+    odds_unavailable: "Las cuotas de este partido no están disponibles por ahora.",
+    kicking_off: "Comienza ya", countdown_in: "en",
+    finished: "Finalizado", group_label: "Grupo", tbd: "Por definir",
+    round_r32: "Dieciseisavos", round_r16: "Octavos", round_qf: "Cuartos",
+    round_sf: "Semifinales", round_final: "Final",
+    round_r16_singular: "Octavos de Final", round_qf_singular: "Cuarto de Final",
+    round_sf_singular: "Semifinal", round_bronze_singular: "Tercer Puesto",
+    updating_badge: "ACTUALIZANDO", mp: "PJ", gd: "DG", pts: "Pts", prob: "Prob",
+    updated_just_now: "Actualizado justo ahora",
+    match_label: "Partido", thirds_race_short: "Terceros Lugares", thirds_race: "Carrera por el Tercer Lugar",
+    thirds_race_odds: "Terceros Lugares Proyectados", live_now: "En vivo",
+    tie_note: "Empate — ¿quién gana en penales?",
+  },
+};
+function tr(key) {
+  return (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key;
+}
+function trPredictMatchup(roundName) {
+  return LANG === "es" ? `Predice este partido de ${roundName}` : `Predict this ${roundName} matchup`;
+}
+function trPredictionCleared(matchNum, reason) {
+  const reasonText = reason === "group"
+    ? (LANG === "es" ? "los resultados de grupo cambiaron quién juega" : "group results changed who's playing")
+    : (LANG === "es" ? "resultados anteriores cambiaron quién juega" : "earlier results changed who's playing");
+  return LANG === "es"
+    ? `La predicción del partido ${matchNum} se borró — ${reasonText}.`
+    : `Match ${matchNum}'s prediction was cleared — ${reasonText}.`;
+}
+
+// Display-only Spanish team names, keyed by the same canonical English name
+// TEAM_CODES uses for flag lookup - that key never changes with language,
+// only what's shown as text does.
+const TEAM_NAMES_ES = {
+  "Mexico": "México", "South Korea": "Corea del Sur", "South Africa": "Sudáfrica",
+  "Czech Republic": "República Checa", "Canada": "Canadá", "Switzerland": "Suiza",
+  "Qatar": "Catar", "Bosnia-Herzegovina": "Bosnia y Herzegovina", "Brazil": "Brasil",
+  "Morocco": "Marruecos", "Haiti": "Haití", "Scotland": "Escocia", "USA": "Estados Unidos",
+  "Paraguay": "Paraguay", "Australia": "Australia", "Turkey": "Turquía",
+  "Germany": "Alemania", "Curacao": "Curazao", "Ivory Coast": "Costa de Marfil",
+  "Ecuador": "Ecuador", "Netherlands": "Países Bajos", "Japan": "Japón",
+  "Sweden": "Suecia", "Tunisia": "Túnez", "Belgium": "Bélgica", "Egypt": "Egipto",
+  "Iran": "Irán", "New Zealand": "Nueva Zelanda", "Spain": "España",
+  "Cape Verde": "Cabo Verde", "Saudi Arabia": "Arabia Saudita", "Uruguay": "Uruguay",
+  "France": "Francia", "Senegal": "Senegal", "Norway": "Noruega", "Iraq": "Irak",
+  "Argentina": "Argentina", "Algeria": "Argelia", "Austria": "Austria",
+  "Jordan": "Jordania", "Portugal": "Portugal", "DR Congo": "RD Congo",
+  "Uzbekistan": "Uzbekistán", "Colombia": "Colombia", "England": "Inglaterra",
+  "Croatia": "Croacia", "Ghana": "Ghana", "Panama": "Panamá",
+};
+function tn(name) {
+  if (!name || LANG !== "es") return name;
+  return TEAM_NAMES_ES[name] || name;
+}
+
+let prevBracket = null;
+let prevPositions = {};
+const updatedSlots = new Set();
+
+// cron-cached, finished-matches-only state (standings/bracket/thirds) —
+// refreshed slowly since it only changes when a match actually ends.
+let cachedState = {
+  standings: {}, bracket: [], thirds_race: [],
+  predicted_standings: {}, predicted_bracket: [], predicted_thirds_race: [],
+  last_updated: null,
+};
+
+// fetched directly from ESPN on every poll, bypassing the cron entirely —
+// this is what makes the live score/clock feel actually live.
+let liveMatches = [];
+let allMatches = []; // every group-stage match (any status) — backs the today's-games strip
+const liveTickers = {}; // matchKey -> {baseMinute, fetchedAtMs, status, label}
+
+// ── ODDS / BETTING CONTENT GATING ───────────────────────────────────────────
+// Affiliate odds content is opt-IN by country, not opt-out: empty until
+// explicitly populated once real affiliate-program market clearance is
+// known, so a visitor from an unrecognized/unchecked country never sees it
+// by accident. Geo comes from Netlify's own edge geolocation (see
+// netlify/functions/geo.js) - fetched once per page load, not per card.
+const ODDS_ALLOWED_COUNTRIES = [];
+let visitorCountry = null;
+let visitorCountryLoaded = false;
+async function fetchVisitorGeo() {
+  try {
+    const res = await fetch("/api/geo");
+    const data = await res.json();
+    visitorCountry = data.country || null;
+  } catch (e) {
+    visitorCountry = null;
+  } finally {
+    visitorCountryLoaded = true;
+    renderAll();
+  }
+}
+function oddsGeoAllowed() {
+  return ODDS_ALLOWED_COUNTRIES.includes(visitorCountry);
+}
+
+// Separate gate from geo, and deliberately not combined into one check:
+// oddsGeoAllowed() controls whether a neutral "Odds" badge (no figures,
+// no bookmaker names) appears at all; this controls what happens when
+// it's clicked - confirmed once per browser (localStorage) and persists,
+// so actual odds/bookmaker content only ever renders after this is true.
+const BETTING_AGE_KEY = "bettingAgeConfirmed";
+function bettingAgeConfirmed() {
+  return localStorage.getItem(BETTING_AGE_KEY) === "yes";
+}
+
+// bot/odds_api.py's bookmaker_odds is keyed by its own home/away
+// orientation (whichever side The Odds API called home) - re-orient to
+// match whatever home/away this specific call site is using before
+// handing it back, so callers never have to think about that.
+function realOddsFor(home, away) {
+  const entry = (cachedState.real_odds || {})[[home, away].sort().join("|")];
+  const bm = entry?.bookmaker_odds;
+  if (!bm || Object.keys(bm).length === 0) return null;
+  const flip = entry.home !== home;
+  const reorient = o => !o ? null : flip ? { home: o.away, draw: o.draw, away: o.home } : o;
+  return { unibet: reorient(bm.unibet), betsson: reorient(bm.betsson) };
+}
+function hasRealOdds(home, away) {
+  return !!realOddsFor(home, away);
+}
+
+// Pre-confirmation, this is the only "betting content" any visitor sees -
+// a plain text label, no odds figures, no bookmaker names - clicking it is
+// what triggers the age gate. Returns "" (renders nothing) unless the
+// visitor's country is on the allow-list AND real odds actually exist for
+// this exact matchup.
+function oddsBadgeHtml(home, away) {
+  if (!home || !away || !oddsGeoAllowed() || !hasRealOdds(home, away)) return "";
+  return `<button type="button" class="odds-badge" data-home="${home}" data-away="${away}">${tr("odds_badge")}</button>`;
+}
+function wireOddsBadges(container) {
+  container.querySelectorAll(".odds-badge").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation(); // cards this sits inside may have their own click handler
+      openOddsModal(btn.dataset.home, btn.dataset.away);
+    });
+  });
+}
+
+// Generic "do this once 18+ is confirmed" gate - openOddsModal and the
+// futures-bet banner buttons both funnel through this rather than each
+// keeping their own pending-action state.
+let pendingAgeGateAction = null;
+function requireAgeGate(action) {
+  if (!bettingAgeConfirmed()) {
+    pendingAgeGateAction = action;
+    document.getElementById("age-gate-backdrop").style.display = "flex";
+    return;
+  }
+  action();
+}
+function openOddsModal(home, away) {
+  requireAgeGate(() => renderOddsModal(home, away));
+}
+function bookieOddsRow(name, href, o) {
+  return `<div class="bookie-row">
+    <div class="bookie-row-top">
+      <span class="bookie-name">${name}</span>
+      <a class="bookie-link" href="${href}" target="_blank" rel="noopener noreferrer sponsored">${tr("bet_at")} ${name}</a>
+    </div>
+    <div class="bookie-odds-cells">
+      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_home")}</span><span class="bookie-odds-value">${o.home.toFixed(2)}</span></div>
+      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_draw")}</span><span class="bookie-odds-value">${o.draw.toFixed(2)}</span></div>
+      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_away")}</span><span class="bookie-odds-value">${o.away.toFixed(2)}</span></div>
+    </div>
+  </div>`;
+}
+function renderOddsModal(home, away) {
+  const odds = realOddsFor(home, away) || {};
+  document.getElementById("odds-modal-title").textContent = `${tn(home)} vs ${tn(away)}`;
+  const rows = [
+    odds.unibet ? bookieOddsRow("Unibet", "https://www.unibet.com", odds.unibet) : "",
+    odds.betsson ? bookieOddsRow("Betsson", "https://www.betsson.com", odds.betsson) : "",
+  ].filter(Boolean);
+  document.getElementById("odds-modal-body").innerHTML = rows.join("")
+    || `<p class="odds-modal-empty">${tr("odds_unavailable")}</p>`;
+  document.getElementById("odds-modal-backdrop").style.display = "flex";
+}
+document.getElementById("age-gate-confirm").addEventListener("click", () => {
+  localStorage.setItem(BETTING_AGE_KEY, "yes");
+  document.getElementById("age-gate-backdrop").style.display = "none";
+  const action = pendingAgeGateAction;
+  pendingAgeGateAction = null;
+  if (action) action();
+});
+function closeAgeGate() {
+  document.getElementById("age-gate-backdrop").style.display = "none";
+  pendingAgeGateAction = null;
+}
+document.getElementById("age-gate-cancel").addEventListener("click", closeAgeGate);
+document.getElementById("age-gate-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "age-gate-backdrop") closeAgeGate();
+});
+document.getElementById("odds-modal-close").addEventListener("click", () => {
+  document.getElementById("odds-modal-backdrop").style.display = "none";
+});
+document.getElementById("odds-modal-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "odds-modal-backdrop") document.getElementById("odds-modal-backdrop").style.display = "none";
+});
+
+// Root-domain-only placeholders, same reasoning as the per-match bookie
+// links above: no verified, stable deep link to either operator's actual
+// World Cup outright-winner market exists yet - swap these for real
+// tracking links once the affiliate accounts are approved.
+const FUTURES_BOOKIE_LINKS = {
+  unibet: "https://www.unibet.com",
+  betsson: "https://www.betsson.com",
+};
+function updateFuturesBanner() {
+  document.getElementById("futures-bet-banner").style.display = oddsGeoAllowed() ? "flex" : "none";
+}
+document.querySelectorAll(".futures-bet-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const href = FUTURES_BOOKIE_LINKS[btn.dataset.bookie];
+    requireAgeGate(() => window.open(href, "_blank", "noopener,noreferrer"));
+  });
+});
+
+function matchKey(m) { return `${m.home}_${m.away}`; }
+
+function parseMinute(label) {
+  const m = String(label || "").match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// Ticks the displayed minute forward locally between polls (every poll
+// resyncs to ESPN's real value), so the clock never visibly freezes even
+// though the live endpoint is only fetched every ~15s. Stoppage time
+// ("45'+3'", "90'+6'") isn't extrapolated — there's no way to know how
+// much added time the referee will give, so once it appears we just show
+// ESPN's own latest value verbatim until the next poll updates it, rather
+// than silently dropping the "+X" and free-running the minute past 90.
+function tickingMinuteLabel(m) {
+  const t = liveTickers[matchKey(m)];
+  if (!t || t.status !== "live" || t.baseMinute == null) return m.minute || "–";
+  if (t.hasStoppage) return t.rawLabel || m.minute || "–";
+  const elapsedMin = Math.floor((Date.now() - t.fetchedAtMs) / 60000);
+  return `${t.baseMinute + elapsedMin}'`;
+}
+
+// Overlays the live in-progress score onto the cached (finished-matches-
+// only) standings and re-sorts just the affected groups, so positions/
+// points update immediately rather than waiting for the match to end and
+// the cron to catch up. Tiebreaks beyond points/GD/GF (official rank,
+// fair play) aren't applied here — acceptable for a transient live
+// preview that gets superseded by the real backend computation once the
+// match finishes.
+function applyLiveOverlay(standings, liveMatches) {
+  if (!liveMatches || liveMatches.length === 0) return standings;
+  const out = {};
+  for (const g of Object.keys(standings)) out[g] = standings[g].map(t => ({ ...t }));
+
+  for (const m of liveMatches) {
+    const teams = out[m.group];
+    if (!teams) continue;
+    const home = teams.find(t => t.name === m.home);
+    const away = teams.find(t => t.name === m.away);
+    if (!home || !away) continue;
+
+    home.played += 1; away.played += 1;
+    home.goals_for += m.home_score; home.goals_against += m.away_score;
+    away.goals_for += m.away_score; away.goals_against += m.home_score;
+    if (m.home_score > m.away_score) { home.won += 1; away.lost += 1; }
+    else if (m.home_score === m.away_score) { home.drawn += 1; away.drawn += 1; }
+    else { away.won += 1; home.lost += 1; }
+    home.points = home.won * 3 + home.drawn;
+    away.points = away.won * 3 + away.drawn;
+    home.goal_diff = home.goals_for - home.goals_against;
+    away.goal_diff = away.goals_for - away.goals_against;
+
+    out[m.group] = teams.slice().sort((a, b) =>
+      b.points - a.points || b.goal_diff - a.goal_diff || b.goals_for - a.goals_for
+    );
+  }
+  return out;
+}
+
+// ── TODAY'S GAMES ─────────────────────────────────────────────────────────────
+let lastTodayFocusKey = null;
+
+// Built manually (not toLocaleString) so the hour always gets a leading
+// zero ("02:00", not "2:00") and never flips to a 12-hour AM/PM format
+// depending on the viewer's browser locale.
+function formatKickoffTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+// Hours away ticks in whole minutes (no point churning seconds an hour
+// out); under an hour switches to a live MM:SS countdown, since that's
+// where a ticking clock actually feels worth watching.
+function formatCountdown(iso) {
+  const diffMs = new Date(iso) - new Date();
+  if (diffMs <= 0) return tr("kicking_off");
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h >= 1) return `${tr("countdown_in")} ${h}h ${String(m).padStart(2, "0")}m`;
+  return `${tr("countdown_in")} ${m}:${String(s).padStart(2, "0")}`;
+}
+
+// Shows every match within 24h either side of right now, rather than a
+// strict calendar day — a match that kicks off at 23:00 and runs past
+// midnight should still show, and so should one starting in a few hours
+// even if that's technically "tomorrow". Falls back to the single nearest
+// day's matches only on a rest day with literally nothing in that window.
+const TODAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+function renderTodayStrip(allMatches) {
+  const section = document.getElementById("today-section");
+  const container = document.getElementById("today-matches-container");
+  if (!allMatches || allMatches.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+
+  const now = new Date();
+  let windowMatches = allMatches.filter(m => Math.abs(new Date(m.kickoff) - now) <= TODAY_WINDOW_MS);
+
+  if (windowMatches.length === 0) {
+    let closest = null, bestDist = Infinity;
+    for (const m of allMatches) {
+      const dist = Math.abs(new Date(m.kickoff) - now);
+      if (dist < bestDist) { bestDist = dist; closest = m; }
+    }
+    if (!closest) {
+      section.style.display = "none";
+      return;
+    }
+    const day = new Date(closest.kickoff).toDateString();
+    windowMatches = allMatches.filter(m => new Date(m.kickoff).toDateString() === day);
+  }
+
+  windowMatches.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
+  section.style.display = "block";
+
+  // Only the single next upcoming match gets a live countdown - every
+  // other not-yet-started card just shows its plain kickoff time.
+  const nextUpcoming = windowMatches.find(m => m.status !== "live" && m.status !== "ht" && m.status !== "ft");
+
+  container.innerHTML = windowMatches.map(m => {
+    const isLive = m.status === "live" || m.status === "ht";
+    const isFinished = m.status === "ft";
+    const showScore = isLive || isFinished;
+    const isNextUpcoming = !isLive && !isFinished && nextUpcoming && m.number === nextUpcoming.number;
+
+    // One slot now carries both the status and whatever time is relevant
+    // to it - live games show the ticking minute (red), the next upcoming
+    // game counts down to kickoff, every other upcoming game just shows
+    // its kickoff time, finished games just say "Finished" since there's
+    // no extra time worth a whole separate row for that.
+    const statusLabel = isLive
+      ? `<span class="today-status live"><span class="today-live-dot"></span>${tickingMinuteLabel(m)}</span>`
+      : isFinished
+        ? `<span class="today-status">${tr("finished")}</span>`
+        : isNextUpcoming
+          ? `<span class="today-status countdown">${formatCountdown(m.kickoff)}</span>`
+          : `<span class="today-status">${formatKickoffTime(m.kickoff)}</span>`;
+
+    const scoreSpan = (score) => showScore
+      ? `<span class="today-team-score${isLive ? " live" : ""}">${score ?? ""}</span>`
+      : "";
+
+    return `
+    <div class="today-card${isLive ? " live" : ""}" data-number="${m.number}">
+      <div class="today-card-top">
+        <span class="today-match-num">${m.number}</span>
+        <span class="today-group">${tr("group_label")} ${m.group}</span>
+        ${statusLabel}
+      </div>
+      <div class="today-team-row">
+        ${flagImg(m.home)}
+        <span class="today-team-name">${tn(m.home)}</span>
+        ${scoreSpan(m.home_score)}
+      </div>
+      <div class="today-team-row">
+        ${flagImg(m.away)}
+        <span class="today-team-name">${tn(m.away)}</span>
+        ${scoreSpan(m.away_score)}
+      </div>
+      ${oddsBadgeHtml(m.home, m.away) ? `<div class="today-card-odds">${oddsBadgeHtml(m.home, m.away)}</div>` : ""}
+    </div>`;
+  }).join("");
+  wireOddsBadges(container);
+
+  // Auto-scroll so the live game (or, if none, the next upcoming one) sits
+  // at the left edge of the visible strip - finished games scroll off to
+  // the left since they're the least important once they're over. Only
+  // re-applied when the focus actually changes, so it doesn't fight a
+  // user who's manually scrolled elsewhere in the strip.
+  const liveIdx = windowMatches.findIndex(m => m.status === "live" || m.status === "ht");
+  const upcomingIdx = windowMatches.findIndex(m => m.status !== "ft" && m.status !== "live" && m.status !== "ht");
+  const focusIdx = liveIdx !== -1 ? liveIdx : upcomingIdx;
+  if (focusIdx !== -1) {
+    const focusKey = matchKey(windowMatches[focusIdx]);
+    if (focusKey !== lastTodayFocusKey) {
+      lastTodayFocusKey = focusKey;
+      container.children[focusIdx]?.scrollIntoView({ inline: "start", block: "nearest" });
+    }
+  }
+}
+
+// Runs every second to keep the live minute / countdown text current,
+// without rebuilding the cards themselves - rebuilding via innerHTML every
+// second was destroying and recreating every flag <img>, which showed up
+// as the flags visibly blinking once a second (worst on mobile, where
+// image decode/paint is slower). Only the .today-status text node is
+// touched here; flags, scores, and everything else are left alone.
+function tickTodayStatuses() {
+  document.querySelectorAll("#today-matches-container .today-card[data-number]").forEach(card => {
+    const num = parseInt(card.dataset.number, 10);
+    const m = allMatches.find(x => x.number === num);
+    if (!m) return;
+    const statusEl = card.querySelector(".today-status");
+    if (!statusEl) return;
+    if (statusEl.classList.contains("live")) {
+      statusEl.innerHTML = `<span class="today-live-dot"></span>${tickingMinuteLabel(m)}`;
+    } else if (statusEl.classList.contains("countdown")) {
+      statusEl.textContent = formatCountdown(m.kickoff);
+    }
+  });
+}
+
+function scrollTodayStrip(dir) {
+  const container = document.getElementById("today-matches-container");
+  container.scrollBy({ left: dir * (container.clientWidth * 0.8), behavior: "smooth" });
+}
+document.getElementById("today-arrow-left").addEventListener("click", () => scrollTodayStrip(-1));
+document.getElementById("today-arrow-right").addEventListener("click", () => scrollTodayStrip(1));
+
+// ── BRACKET ───────────────────────────────────────────────────────────────────
+function detectChanges(newBracket) {
+  if (!prevBracket) return;
+  const prevMap = Object.fromEntries(prevBracket.map(m => [m.slot, m]));
+  for (const match of newBracket) {
+    const prev = prevMap[match.slot];
+    if (!prev) continue;
+    const changed =
+      prev.home?.team !== match.home?.team ||
+      prev.away?.team !== match.away?.team;
+    if (changed) updatedSlots.add(match.slot);
+  }
+  setTimeout(() => updatedSlots.clear(), 360000); // clear after 6 min
+}
+
+function teamRow(t, showProb = true) {
+  if (!t || !t.team) {
+    return `<div class="tie-team"><span class="seed">${t?.seed || ""}</span><span class="name" style="color:#9aa0ad">${t?.label || tr("tbd")}</span></div>`;
+  }
+  const probPct = Math.round((t.prob || 0) * 100);
+  const pillCls = probPct >= 100 ? "green" : "orange";
+  const pill = showProb ? `<span class="team-prob-pill ${pillCls}">${probPct}%</span>` : "";
+  return `<div class="tie-team">
+    <span class="seed">${t.seed}</span>
+    ${flagImg(t.team)}
+    <span class="name">${tn(t.team)}</span>
+    ${pill}
+  </div>`;
+}
+
+// Shared by the Odds-Based Projection bracket and the Simulator bracket: a
+// match number on the left, two stacked team rows on the right, each row's
+// right-hand slot showing the seed code ("1F") until a score exists, then
+// the score itself - no "vs" divider, no probability pill (neither tab
+// claims an exact result, so showing percentages there invites more
+// confidence than the number deserves).
+//
+// isWinner is only meaningful for R16-onward Simulator rows, where both
+// teams are already real/projected (R32 still shows its group seed - "1F"
+// is useful context there, "W74" on a row that already says "Germany"
+// isn't): true draws the green winner badge, false leaves the slot blank,
+// undefined (R32, or any row with no winner concept) falls back to the
+// seed-code display.
+function resultTeamRow(t, score, isWinner) {
+  if (!t || !t.team) {
+    return `<div class="result-team">
+      <span class="name" style="color:#9aa0ad">${t?.label || tr("tbd")}</span>
+      <span class="result-right muted">${t?.seed || ""}</span>
+    </div>`;
+  }
+  let right;
+  if (score != null) {
+    right = `<span class="result-right scored">${score}</span>`;
+  } else if (isWinner === true) {
+    right = `<span class="winner-badge">W</span>`;
+  } else if (isWinner === false) {
+    right = "";
+  } else {
+    right = `<span class="result-right muted">${t.seed}</span>`;
+  }
+  return `<div class="result-team">
+    ${flagImg(t.team)}
+    <span class="name">${tn(t.team)}</span>
+    ${right}
+  </div>`;
+}
+function resultCard(num, home, away, { homeScore = null, awayScore = null, homeIsWinner, awayIsWinner, extraClass = "", style = "", attrs = "" } = {}) {
+  const badge = home?.team && away?.team ? oddsBadgeHtml(home.team, away.team) : "";
+  return `<div class="tie-card result-card${extraClass ? " " + extraClass : ""}" style="${style}" ${attrs}>
+    <span class="result-num">${num}</span>
+    <div class="result-rows">
+      ${resultTeamRow(home, homeScore, homeIsWinner)}
+      ${resultTeamRow(away, awayScore, awayIsWinner)}
+    </div>
+    ${badge ? `<div class="result-card-odds">${badge}</div>` : ""}
+  </div>`;
+}
+
+// Browser's own locale + timezone — no timeZone option means it converts
+// from the UTC kickoff to whatever local time the viewer's device is set to.
+function formatKickoff(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// Later rounds (R16/QF/SF/Final) have no real data yet — they depend on
+// actual R32 results, so who plays in them is never shown (see
+// engine.compute_predicted_state's docstring on why projecting a guess on
+// top of a guess isn't worth it). The match's real kickoff time, though,
+// is fixed by FIFA's schedule regardless of who qualifies into it - both
+// the times and the feeder structure below are read straight off FIFA's
+// official Match Schedule PDF (10 April 2026 edition) and cross-checked
+// against ESPN's own scoreboard dates for every one of the 16 matches, so
+// this isn't a guess the way the team pairing would be.
+const KNOCKOUT_FEEDERS = {
+  89: [74, 77], 90: [73, 75], 91: [76, 78], 92: [79, 80],
+  93: [83, 84], 94: [81, 82], 95: [86, 88], 96: [85, 87],
+  97: [89, 90], 98: [93, 94], 99: [91, 92], 100: [95, 96],
+  101: [97, 98], 102: [99, 100],
+  103: [101, 102], // Bronze Final - fed by the *losers* of 101/102
+  104: [101, 102], // Final - fed by the winners of 101/102
+};
+const KNOCKOUT_KICKOFFS = {
+  89: "2026-07-04T21:00Z", 90: "2026-07-04T17:00Z", 91: "2026-07-05T20:00Z", 92: "2026-07-06T00:00Z",
+  93: "2026-07-06T19:00Z", 94: "2026-07-07T00:00Z", 95: "2026-07-07T16:00Z", 96: "2026-07-07T20:00Z",
+  97: "2026-07-09T20:00Z", 98: "2026-07-10T19:00Z", 99: "2026-07-11T21:00Z", 100: "2026-07-12T01:00Z",
+  101: "2026-07-14T19:00Z", 102: "2026-07-15T19:00Z",
+  103: "2026-07-18T21:00Z", 104: "2026-07-19T19:00Z",
+};
+
+// A greyed-out version of resultCard for a slot whose two teams aren't
+// determined yet: same shell, a real header (match number + real kickoff
+// date), and one row per feeder showing "W<match>" (or "L<match>" for the
+// Bronze Final's loser-feeders) instead of a flag, since there's no team
+// to show one for yet.
+function tbdResultCard(num, style = "") {
+  const [a, b] = KNOCKOUT_FEEDERS[num] || [];
+  const prefix = num === 103 ? "L" : "W";
+  const row = (src) => `<div class="tbd-team">
+    <span class="result-right muted">${prefix}${src}</span>
+    <span class="flag-placeholder">?</span>
+    <span class="name">${tr("tbd")}</span>
+  </div>`;
+  return `<div class="tie-card tbd-card later-round" style="${style}">
+    <div class="tie-top">
+      <span class="match-num">${num}</span>
+      <span class="match-date">${formatKickoff(KNOCKOUT_KICKOFFS[num])}</span>
+    </div>
+    ${row(a)}${row(b)}
+  </div>`;
+}
+
+// Match numbers per slot, in top-to-bottom row order — NOT plain sequential
+// counting from each round's first number. R16 in particular skips around
+// (89,90, then 93,94 before 91,92) because match 93 (winner of 83 v 84)
+// feeds the same QF as match 89/90's winners' QF opponent slot, per real
+// FIFA pairing — see engine.py's BRACKET_TREE_ORDER for the full derivation.
+// QF/SF/Final happen to still be sequential once R32 is ordered correctly.
+const PLACEHOLDER_ROUNDS = [
+  { round: 2, title: tr("round_r16"), numbers: [89, 90, 93, 94, 91, 92, 95, 96] },
+  { round: 3, title: tr("round_qf"), numbers: [97, 98, 99, 100] },
+  { round: 4, title: tr("round_sf"), numbers: [101, 102] },
+  { round: 5, title: tr("round_final"), numbers: [104] },
+];
+
+// gridId/spinnerId let this render into either the actual-tab bracket or
+// the predicted-tab bracket. trackChanges (the "just updated" pulse) and
+// showProb (the per-team percentage pill) are both off for the predicted
+// tab — that bracket is a single deterministic projection re-rendered
+// fresh each poll, not something worth highlighting deltas on, and it has
+// no probabilities attached (see engine.compute_predicted_state). resultStyle
+// swaps in the seed/score card layout (see resultCard) instead of the
+// actual tab's probability-pill layout - on by default exactly when showProb
+// is off, since today that's the same tab, but kept as its own flag since
+// "no probabilities" and "seed/score layout" are independent decisions.
+function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, showProb = true, resultStyle = !showProb } = {}) {
+  const grid = document.getElementById(gridId);
+  const spinner = document.getElementById(spinnerId);
+  if (!bracket || bracket.length === 0) return;
+
+  if (trackChanges) {
+    detectChanges(bracket);
+    prevBracket = bracket;
+  }
+  spinner.style.display = "none";
+  grid.style.display = "grid";
+
+  // bracket is always the 16 R32 matches, optionally followed by the
+  // R16-through-Bronze-Final projection (predicted tab only - see
+  // engine.compute_predicted_state). The actual tab's bracket never grows
+  // past 16, so laterByNumber stays empty there and every later-round slot
+  // below falls back to the plain TBD placeholder, unchanged.
+  const r32 = bracket.slice(0, 16);
+  const laterByNumber = {};
+  bracket.slice(16).forEach(m => { laterByNumber[m.match_number] = m; });
+
+  let html = `<div class="round-title" style="grid-column:1">${tr("round_r32")}</div>`;
+  html += r32.map((m, i) => {
+    const isUpdated = trackChanges && updatedSlots.has(m.slot);
+    if (resultStyle) {
+      return resultCard(m.match_number ?? i + 73, m.home, m.away, { style: `grid-row:${i + 2}` });
+    }
+    return `
+    <div class="tie-card${isUpdated ? " just-updated" : ""}" style="grid-row:${i + 2}">
+      <div class="tie-top">
+        <span class="match-num">${m.match_number ?? i + 73}</span>
+        <span class="match-date">${formatKickoff(m.kickoff)}</span>
+        ${isUpdated ? `<span class="updating-badge">🔴 ${tr("updating_badge")}</span>` : ''}
+        ${m.home?.team && m.away?.team ? oddsBadgeHtml(m.home.team, m.away.team) : ""}
+      </div>
+      ${teamRow(m.home, showProb)}
+      ${teamRow(m.away, showProb)}
+    </div>`;
+  }).join("");
+
+  for (const r of PLACEHOLDER_ROUNDS) {
+    const groupSize = Math.pow(2, r.round - 1);
+    html += `<div class="round-title" style="grid-column:${r.round}">${r.title}</div>`;
+
+    const renderSlot = (num, rowStyle) => {
+      const m = laterByNumber[num];
+      const gridStyle = `grid-column:${r.round};${rowStyle}`;
+      if (m && (m.home?.team || m.away?.team)) {
+        if (resultStyle) {
+          return resultCard(num, m.home, m.away, { extraClass: "later-round", style: gridStyle });
+        }
+        return `<div class="tie-card later-round" style="${gridStyle}">
+          <div class="tie-top"><span class="match-num">${num}</span></div>
+          ${teamRow(m.home, showProb)}
+          ${teamRow(m.away, showProb)}
+        </div>`;
+      }
+      return tbdResultCard(num, gridStyle);
+    };
+
+    if (r.round === 4) {
+      // Semifinals: shrink each card by one row to open a gap right in the
+      // middle of the column for the Bronze Final (3rd place) — it isn't
+      // fed by anything above it in the tree, so unlike every other slot
+      // here, it doesn't need to line up with a feeder match.
+      const sfSpan = groupSize - 1;
+      r.numbers.forEach((num, idx) => {
+        const rowStart = idx * groupSize + 2 + (idx === 1 ? 1 : 0);
+        html += renderSlot(num, `grid-row:${rowStart} / span ${sfSpan}`);
+      });
+      html += renderSlot(103, `grid-row:${groupSize + 1} / span 2`);
+      continue;
+    }
+
+    r.numbers.forEach((num, idx) => {
+      const rowStart = idx * groupSize + 2;
+      html += renderSlot(num, `grid-row:${rowStart} / span ${groupSize}`);
+    });
+  }
+
+  grid.innerHTML = html;
+  wireOddsBadges(grid);
+}
+
+function renderBracket(bracket) {
+  renderBracketInto(bracket, "bracket-grid", "bracket-spinner", { trackChanges: true, showProb: true });
+}
+function renderPredictedBracket(bracket) {
+  renderBracketInto(bracket, "predicted-bracket-grid", "predicted-bracket-spinner", { trackChanges: false, showProb: false });
+}
+
+// "prob" is always P(advance to R32) now, regardless of current position.
+function advanceProbPill(prob) {
+  const pct = Math.round((prob || 0) * 100);
+  let cls;
+  if (pct >= 100) cls = "tier-green";
+  else if (pct >= 75) cls = "tier-yellow";
+  else if (pct >= 11) cls = "tier-orange";
+  else if (pct >= 1) cls = "tier-red";
+  else cls = "tier-grey";
+  return { pct, cls, checkmark: "" };
+}
+
+// ── STANDINGS ─────────────────────────────────────────────────────────────────
+// gridId/showProb/showLive/trackArrows let this serve both tabs: the actual
+// table (live overlay, move arrows, advance-% pill) and the predicted table
+// (none of that — it's a single re-computed projection each poll, and has
+// no probabilities attached, see engine.compute_predicted_state).
+function renderStandingsInto(standings, liveMatches, gridId, { showProb = true, showLive = true, trackArrows = true } = {}) {
+  const grid = document.getElementById(gridId);
+  if (!standings || Object.keys(standings).length === 0) return;
+
+  const liveByTeam = {};
+  if (showLive) {
+    (liveMatches || []).forEach(m => {
+      const state = m.home_score === m.away_score ? "tied" : m.home_score > m.away_score ? "winning" : "losing";
+      const flip = { winning: "losing", losing: "winning", tied: "tied" };
+      liveByTeam[m.home] = { score: `${m.home_score ?? "–"}-${m.away_score ?? "–"}`, state };
+      liveByTeam[m.away] = { score: `${m.away_score ?? "–"}-${m.home_score ?? "–"}`, state: flip[state] };
+    });
+  }
+
+  const positions = trackArrows ? prevPositions : {};
+  const newPositions = {};
+  const groups = "ABCDEFGHIJKL".split("");
+  grid.innerHTML = groups.map(g => {
+    const teams = standings[g] || [];
+    const rows = teams.map((t, i) => {
+      const pos = i + 1;
+      newPositions[t.name] = pos;
+
+      let arrow = "";
+      if (trackArrows) {
+        const prevPos = positions[t.name];
+        if (prevPos && prevPos !== pos) {
+          const delta = prevPos - pos;
+          const cls = delta > 0 ? "up" : "down";
+          const symbol = delta > 0 ? "▲" : "▼";
+          arrow = `<span class="move-arrow ${cls}">${symbol}${Math.abs(delta) > 1 ? Math.abs(delta) : ""}</span>`;
+        }
+      }
+
+      const live = liveByTeam[t.name];
+      const livePill = live
+        ? `<span class="result-pill live ${live.state}"><span class="live-dot"></span>${live.score}</span>`
+        : "";
+
+      const probCol = showProb
+        ? (() => {
+            const { pct, cls, checkmark } = advanceProbPill(t.prob);
+            return `<div class="prob-pill ${cls}">${checkmark}${pct}%</div>`;
+          })()
+        : "";
+
+      return `<div class="standings-row">
+        <div class="pos-badge p${pos}">${pos}</div>
+        <div class="standings-team">
+          ${flagImg(t.name)}
+          <span class="name">${tn(t.name)}</span>
+          ${arrow}
+        </div>
+        <div class="standings-live">${livePill}</div>
+        <div class="standings-col">${t.played}</div>
+        <div class="standings-col">${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</div>
+        <div class="standings-col">${t.points}</div>
+        ${probCol}
+      </div>`;
+    }).join("");
+    const probHeader = showProb ? `<span class="gh-col prob">${tr("prob")}</span>` : "";
+    return `<div class="group-card">
+      <div class="group-head">
+        <span class="gh-name">${tr("group_label")} ${g}</span>
+        <span class="gh-col" style="width:54px"></span>
+        <span class="gh-col">${tr("mp")}</span><span class="gh-col">${tr("gd")}</span><span class="gh-col">${tr("pts")}</span>${probHeader}
+      </div>
+      ${rows}
+    </div>`;
+  }).join("");
+
+  if (trackArrows) prevPositions = newPositions;
+}
+
+function renderStandings(standings, liveMatches) {
+  renderStandingsInto(standings, liveMatches, "standings-grid", { showProb: true, showLive: true, trackArrows: true });
+}
+
+// The predicted table only ever shows name + predicted position, never
+// points/GD/GF — those would be expected-value decimals (e.g. 7.3 points),
+// not a result anyone could actually finish with. See engine.py's
+// compute_predicted_state docstring for why this is rank-only by design,
+// not a missing feature.
+function renderPredictedStandings(standings) {
+  const grid = document.getElementById("predicted-standings-grid");
+  if (!standings || Object.keys(standings).length === 0) return;
+
+  const groups = "ABCDEFGHIJKL".split("");
+  grid.innerHTML = groups.map(g => {
+    const teams = standings[g] || [];
+    const rows = teams.map(t => `<div class="standings-row">
+        <div class="pos-badge p${t.position}">${t.position}</div>
+        <div class="standings-team">
+          ${flagImg(t.name)}
+          <span class="name">${tn(t.name)}</span>
+        </div>
+      </div>`).join("");
+    return `<div class="group-card">
+      <div class="group-head">
+        <span class="gh-name">${tr("group_label")} ${g}</span>
+      </div>
+      ${rows}
+    </div>`;
+  }).join("");
+}
+
+// ── THIRDS RACE ───────────────────────────────────────────────────────────────
+function renderThirds(thirds) {
+  const section = document.getElementById("thirds-section");
+  const list = document.getElementById("thirds-list");
+  if (!thirds || thirds.length === 0) { section.style.display = "none"; return; }
+
+  // Only show if any matches played
+  const anyPlayed = thirds.some(t => t.played > 0);
+  if (!anyPlayed) { section.style.display = "none"; return; }
+  section.style.display = "block";
+
+  const rows = thirds.map((t) => {
+    const badgeCls = t.qualifies ? "qualify" : "eliminated";
+    const { pct: probPct, cls: probCls, checkmark } = advanceProbPill(t.prob);
+    return `<div class="standings-row">
+      <div class="pos-badge ${badgeCls}">${t.rank}</div>
+      <div class="standings-team">
+        ${flagImg(t.name)}
+        <span class="name">${tn(t.name)}</span>
+      </div>
+      <div class="standings-col">${t.played}</div>
+      <div class="standings-col">${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</div>
+      <div class="standings-col">${t.points}</div>
+      <div class="prob-pill ${probCls}">${checkmark}${probPct}%</div>
+    </div>`;
+  }).join("");
+
+  list.innerHTML = `<div class="group-card">
+    <div class="group-head">
+      <span class="gh-name">${tr("thirds_race")}</span>
+      <span class="gh-col">${tr("mp")}</span><span class="gh-col">${tr("gd")}</span><span class="gh-col">${tr("pts")}</span><span class="gh-col prob">${tr("prob")}</span>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+// Same cross-group ranking as renderThirds(), but rank + group letter +
+// flag + name only — no Pld/GD/Pts/prob, same reasoning as the predicted
+// standings table (see engine.compute_predicted_state's docstring).
+function renderPredictedThirds(thirds) {
+  const list = document.getElementById("predicted-thirds-list");
+  if (!thirds || thirds.length === 0) return;
+
+  const rows = thirds.map(t => {
+    const badgeCls = t.qualifies ? "qualify" : "eliminated";
+    return `<div class="standings-row">
+      <div class="pos-badge ${badgeCls}">${t.rank}</div>
+      <div class="standings-team">
+        ${flagImg(t.name)}
+        <span class="name">${tn(t.name)}</span>
+      </div>
+      <span class="gh-col" style="width:30px;flex-shrink:0;color:var(--muted);font-weight:700">${t.group}</span>
+    </div>`;
+  }).join("");
+
+  list.innerHTML = `<div class="group-card">
+    <div class="group-head">
+      <span class="gh-name">${tr("thirds_race_odds")}</span>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+// ── LAB ENGINE ────────────────────────────────────────────────────────────────
+// Ported from bot/engine.py + bot/annex_c.py. The Lab needs to recompute
+// standings/bracket instantly on every edit with zero network round-trip,
+// so the deterministic parts of the real engine (no probabilities - same
+// idea as the Odds-Based Projection tab, just fed user-chosen scores instead
+// of expected values) are duplicated here in JS rather than calling back
+// to Python. Keep this in sync with engine.py if the real tiebreak rules
+// or bracket structure ever change.
+const LAB_GROUPS = {
+  A: ["Mexico", "South Korea", "South Africa", "Czech Republic"],
+  B: ["Canada", "Switzerland", "Qatar", "Bosnia-Herzegovina"],
+  C: ["Brazil", "Morocco", "Haiti", "Scotland"],
+  D: ["USA", "Paraguay", "Australia", "Turkey"],
+  E: ["Germany", "Curacao", "Ivory Coast", "Ecuador"],
+  F: ["Netherlands", "Japan", "Sweden", "Tunisia"],
+  G: ["Belgium", "Egypt", "Iran", "New Zealand"],
+  H: ["Spain", "Cape Verde", "Saudi Arabia", "Uruguay"],
+  I: ["France", "Senegal", "Norway", "Iraq"],
+  J: ["Argentina", "Algeria", "Austria", "Jordan"],
+  K: ["Portugal", "DR Congo", "Uzbekistan", "Colombia"],
+  L: ["England", "Croatia", "Ghana", "Panama"],
+};
+const LAB_FIFA_RANKINGS = {
+  "Argentina": 1, "France": 2, "England": 3, "Belgium": 4, "Brazil": 5,
+  "Portugal": 6, "Netherlands": 7, "Spain": 8, "Germany": 9, "USA": 10,
+  "Uruguay": 11, "Mexico": 12, "Colombia": 13, "Japan": 14, "Croatia": 15,
+  "Morocco": 16, "Switzerland": 17, "Senegal": 18, "Sweden": 19, "Norway": 20,
+  "Ecuador": 21, "Canada": 22, "South Korea": 23, "Australia": 24, "Turkey": 25,
+  "Egypt": 26, "Algeria": 27, "Austria": 28, "Tunisia": 29,
+  "Scotland": 30, "Ghana": 31, "Ivory Coast": 32, "Saudi Arabia": 33, "Iran": 34,
+  "Paraguay": 35, "Qatar": 36, "New Zealand": 37, "South Africa": 38,
+  "Bosnia-Herzegovina": 39, "Cape Verde": 40, "DR Congo": 41,
+  "Uzbekistan": 42, "Czech Republic": 43, "Jordan": 44, "Iraq": 45, "Panama": 46,
+  "Curacao": 47, "Haiti": 48,
+};
+const LAB_FIXED_R32 = [
+  { slot: "R1", t1: { group: "A", pos: 2 }, t2: { group: "B", pos: 2 } },
+  { slot: "R2", t1: { group: "C", pos: 1 }, t2: { group: "F", pos: 2 } },
+  { slot: "R3", t1: { group: "F", pos: 1 }, t2: { group: "C", pos: 2 } },
+  { slot: "R4", t1: { group: "H", pos: 1 }, t2: { group: "J", pos: 2 } },
+  { slot: "R5", t1: { group: "J", pos: 1 }, t2: { group: "H", pos: 2 } },
+  { slot: "R6", t1: { group: "E", pos: 2 }, t2: { group: "I", pos: 2 } },
+  { slot: "R7", t1: { group: "K", pos: 2 }, t2: { group: "L", pos: 2 } },
+  { slot: "R8", t1: { group: "D", pos: 2 }, t2: { group: "G", pos: 2 } },
+];
+const LAB_THIRD_SLOTS = ["A", "B", "D", "E", "G", "I", "K", "L"];
+const LAB_MATCH_NUMBERS = {
+  R1: 73, RE: 74, R3: 75, R2: 76, RI: 77, R6: 78,
+  RA: 79, RL: 80, RD: 81, RG: 82, R7: 83, R4: 84,
+  RB: 85, R5: 86, RK: 87, R8: 88,
+};
+const LAB_BRACKET_TREE_ORDER = ["RE", "RI", "R1", "R3", "R7", "R4", "RD", "RG",
+                                 "R2", "R6", "RA", "RL", "R5", "R8", "RB", "RK"];
+
+// Full 495-row FIFA Annex C table (verbatim from bot/annex_c.py) — maps
+// the specific set of 8 qualifying third-place groups to which group's
+// 3rd-place team faces which group-winner slot.
+const LAB_ANNEX_RAW = `1 3E 3J 3I 3F 3H 3G 3L 3K
+2 3H 3G 3I 3D 3J 3F 3L 3K
+3 3E 3J 3I 3D 3H 3G 3L 3K
+4 3E 3J 3I 3D 3H 3F 3L 3K
+5 3E 3G 3I 3D 3J 3F 3L 3K
+6 3E 3G 3J 3D 3H 3F 3L 3K
+7 3E 3G 3I 3D 3H 3F 3L 3K
+8 3E 3G 3J 3D 3H 3F 3L 3I
+9 3E 3G 3J 3D 3H 3F 3I 3K
+10 3H 3G 3I 3C 3J 3F 3L 3K
+11 3E 3J 3I 3C 3H 3G 3L 3K
+12 3E 3J 3I 3C 3H 3F 3L 3K
+13 3E 3G 3I 3C 3J 3F 3L 3K
+14 3E 3G 3J 3C 3H 3F 3L 3K
+15 3E 3G 3I 3C 3H 3F 3L 3K
+16 3E 3G 3J 3C 3H 3F 3L 3I
+17 3E 3G 3J 3C 3H 3F 3I 3K
+18 3H 3G 3I 3C 3J 3D 3L 3K
+19 3C 3J 3I 3D 3H 3F 3L 3K
+20 3C 3G 3I 3D 3J 3F 3L 3K
+21 3C 3G 3J 3D 3H 3F 3L 3K
+22 3C 3G 3I 3D 3H 3F 3L 3K
+23 3C 3G 3J 3D 3H 3F 3L 3I
+24 3C 3G 3J 3D 3H 3F 3I 3K
+25 3E 3J 3I 3C 3H 3D 3L 3K
+26 3E 3G 3I 3C 3J 3D 3L 3K
+27 3E 3G 3J 3C 3H 3D 3L 3K
+28 3E 3G 3I 3C 3H 3D 3L 3K
+29 3E 3G 3J 3C 3H 3D 3L 3I
+30 3E 3G 3J 3C 3H 3D 3I 3K
+31 3C 3J 3E 3D 3I 3F 3L 3K
+32 3C 3J 3E 3D 3H 3F 3L 3K
+33 3C 3E 3I 3D 3H 3F 3L 3K
+34 3C 3J 3E 3D 3H 3F 3L 3I
+35 3C 3J 3E 3D 3H 3F 3I 3K
+36 3C 3G 3E 3D 3J 3F 3L 3K
+37 3C 3G 3E 3D 3I 3F 3L 3K
+38 3C 3G 3E 3D 3J 3F 3L 3I
+39 3C 3G 3E 3D 3J 3F 3I 3K
+40 3C 3G 3E 3D 3H 3F 3L 3K
+41 3C 3G 3J 3D 3H 3F 3L 3E
+42 3C 3G 3J 3D 3H 3F 3E 3K
+43 3C 3G 3E 3D 3H 3F 3L 3I
+44 3C 3G 3E 3D 3H 3F 3I 3K
+45 3C 3G 3J 3D 3H 3F 3E 3I
+46 3H 3J 3B 3F 3I 3G 3L 3K
+47 3E 3J 3I 3B 3H 3G 3L 3K
+48 3E 3J 3B 3F 3I 3H 3L 3K
+49 3E 3J 3B 3F 3I 3G 3L 3K
+50 3E 3J 3B 3F 3H 3G 3L 3K
+51 3E 3G 3B 3F 3I 3H 3L 3K
+52 3E 3J 3B 3F 3H 3G 3L 3I
+53 3E 3J 3B 3F 3H 3G 3I 3K
+54 3H 3J 3B 3D 3I 3G 3L 3K
+55 3H 3J 3B 3D 3I 3F 3L 3K
+56 3I 3G 3B 3D 3J 3F 3L 3K
+57 3H 3G 3B 3D 3J 3F 3L 3K
+58 3H 3G 3B 3D 3I 3F 3L 3K
+59 3H 3G 3B 3D 3J 3F 3L 3I
+60 3H 3G 3B 3D 3J 3F 3I 3K
+61 3E 3J 3B 3D 3I 3H 3L 3K
+62 3E 3J 3B 3D 3I 3G 3L 3K
+63 3E 3J 3B 3D 3H 3G 3L 3K
+64 3E 3G 3B 3D 3I 3H 3L 3K
+65 3E 3J 3B 3D 3H 3G 3L 3I
+66 3E 3J 3B 3D 3H 3G 3I 3K
+67 3E 3J 3B 3D 3I 3F 3L 3K
+68 3E 3J 3B 3D 3H 3F 3L 3K
+69 3E 3I 3B 3D 3H 3F 3L 3K
+70 3E 3J 3B 3D 3H 3F 3L 3I
+71 3E 3J 3B 3D 3H 3F 3I 3K
+72 3E 3G 3B 3D 3J 3F 3L 3K
+73 3E 3G 3B 3D 3I 3F 3L 3K
+74 3E 3G 3B 3D 3J 3F 3L 3I
+75 3E 3G 3B 3D 3J 3F 3I 3K
+76 3E 3G 3B 3D 3H 3F 3L 3K
+77 3H 3G 3B 3D 3J 3F 3L 3E
+78 3H 3G 3B 3D 3J 3F 3E 3K
+79 3E 3G 3B 3D 3H 3F 3L 3I
+80 3E 3G 3B 3D 3H 3F 3I 3K
+81 3H 3G 3B 3D 3J 3F 3E 3I
+82 3H 3J 3B 3C 3I 3G 3L 3K
+83 3H 3J 3B 3C 3I 3F 3L 3K
+84 3I 3G 3B 3C 3J 3F 3L 3K
+85 3H 3G 3B 3C 3J 3F 3L 3K
+86 3H 3G 3B 3C 3I 3F 3L 3K
+87 3H 3G 3B 3C 3J 3F 3L 3I
+88 3H 3G 3B 3C 3J 3F 3I 3K
+89 3E 3J 3B 3C 3I 3H 3L 3K
+90 3E 3J 3B 3C 3I 3G 3L 3K
+91 3E 3J 3B 3C 3H 3G 3L 3K
+92 3E 3G 3B 3C 3I 3H 3L 3K
+93 3E 3J 3B 3C 3H 3G 3L 3I
+94 3E 3J 3B 3C 3H 3G 3I 3K
+95 3E 3J 3B 3C 3I 3F 3L 3K
+96 3E 3J 3B 3C 3H 3F 3L 3K
+97 3E 3I 3B 3C 3H 3F 3L 3K
+98 3E 3J 3B 3C 3H 3F 3L 3I
+99 3E 3J 3B 3C 3H 3F 3I 3K
+100 3E 3G 3B 3C 3J 3F 3L 3K
+101 3E 3G 3B 3C 3I 3F 3L 3K
+102 3E 3G 3B 3C 3J 3F 3L 3I
+103 3E 3G 3B 3C 3J 3F 3I 3K
+104 3E 3G 3B 3C 3H 3F 3L 3K
+105 3H 3G 3B 3C 3J 3F 3L 3E
+106 3H 3G 3B 3C 3J 3F 3E 3K
+107 3E 3G 3B 3C 3H 3F 3L 3I
+108 3E 3G 3B 3C 3H 3F 3I 3K
+109 3H 3G 3B 3C 3J 3F 3E 3I
+110 3H 3J 3B 3C 3I 3D 3L 3K
+111 3I 3G 3B 3C 3J 3D 3L 3K
+112 3H 3G 3B 3C 3J 3D 3L 3K
+113 3H 3G 3B 3C 3I 3D 3L 3K
+114 3H 3G 3B 3C 3J 3D 3L 3I
+115 3H 3G 3B 3C 3J 3D 3I 3K
+116 3C 3J 3B 3D 3I 3F 3L 3K
+117 3C 3J 3B 3D 3H 3F 3L 3K
+118 3C 3I 3B 3D 3H 3F 3L 3K
+119 3C 3J 3B 3D 3H 3F 3L 3I
+120 3C 3J 3B 3D 3H 3F 3I 3K
+121 3C 3G 3B 3D 3J 3F 3L 3K
+122 3C 3G 3B 3D 3I 3F 3L 3K
+123 3C 3G 3B 3D 3J 3F 3L 3I
+124 3C 3G 3B 3D 3J 3F 3I 3K
+125 3C 3G 3B 3D 3H 3F 3L 3K
+126 3C 3G 3B 3D 3H 3F 3L 3J
+127 3H 3G 3B 3C 3J 3F 3D 3K
+128 3C 3G 3B 3D 3H 3F 3L 3I
+129 3C 3G 3B 3D 3H 3F 3I 3K
+130 3H 3G 3B 3C 3J 3F 3D 3I
+131 3E 3J 3B 3C 3I 3D 3L 3K
+132 3E 3J 3B 3C 3H 3D 3L 3K
+133 3E 3I 3B 3C 3H 3D 3L 3K
+134 3E 3J 3B 3C 3H 3D 3L 3I
+135 3E 3J 3B 3C 3H 3D 3I 3K
+136 3E 3G 3B 3C 3J 3D 3L 3K
+137 3E 3G 3B 3C 3I 3D 3L 3K
+138 3E 3G 3B 3C 3J 3D 3L 3I
+139 3E 3G 3B 3C 3J 3D 3I 3K
+140 3E 3G 3B 3C 3H 3D 3L 3K
+141 3H 3G 3B 3C 3J 3D 3L 3E
+142 3H 3G 3B 3C 3J 3D 3E 3K
+143 3E 3G 3B 3C 3H 3D 3L 3I
+144 3E 3G 3B 3C 3H 3D 3I 3K
+145 3H 3G 3B 3C 3J 3D 3E 3I
+146 3C 3J 3B 3D 3E 3F 3L 3K
+147 3C 3E 3B 3D 3I 3F 3L 3K
+148 3C 3J 3B 3D 3E 3F 3L 3I
+149 3C 3J 3B 3D 3E 3F 3I 3K
+150 3C 3E 3B 3D 3H 3F 3L 3K
+151 3C 3J 3B 3D 3H 3F 3L 3E
+152 3C 3J 3B 3D 3H 3F 3E 3K
+153 3C 3E 3B 3D 3H 3F 3L 3I
+154 3C 3E 3B 3D 3H 3F 3I 3K
+155 3C 3J 3B 3D 3H 3F 3E 3I
+156 3C 3G 3B 3D 3E 3F 3L 3K
+157 3C 3G 3B 3D 3J 3F 3L 3E
+158 3C 3G 3B 3D 3J 3F 3E 3K
+159 3C 3G 3B 3D 3E 3F 3L 3I
+160 3C 3G 3B 3D 3E 3F 3I 3K
+161 3C 3G 3B 3D 3J 3F 3E 3I
+162 3C 3G 3B 3D 3H 3F 3L 3E
+163 3C 3G 3B 3D 3H 3F 3E 3K
+164 3H 3G 3B 3C 3J 3F 3D 3E
+165 3C 3G 3B 3D 3H 3F 3E 3I
+166 3H 3J 3I 3F 3A 3G 3L 3K
+167 3E 3J 3I 3A 3H 3G 3L 3K
+168 3E 3J 3I 3F 3A 3H 3L 3K
+169 3E 3J 3I 3F 3A 3G 3L 3K
+170 3E 3G 3J 3F 3A 3H 3L 3K
+171 3E 3G 3I 3F 3A 3H 3L 3K
+172 3E 3G 3J 3F 3A 3H 3L 3I
+173 3E 3G 3J 3F 3A 3H 3I 3K
+174 3H 3J 3I 3D 3A 3G 3L 3K
+175 3H 3J 3I 3D 3A 3F 3L 3K
+176 3I 3G 3J 3D 3A 3F 3L 3K
+177 3H 3G 3J 3D 3A 3F 3L 3K
+178 3H 3G 3I 3D 3A 3F 3L 3K
+179 3H 3G 3J 3D 3A 3F 3L 3I
+180 3H 3G 3J 3D 3A 3F 3I 3K
+181 3E 3J 3I 3D 3A 3H 3L 3K
+182 3E 3J 3I 3D 3A 3G 3L 3K
+183 3E 3G 3J 3D 3A 3H 3L 3K
+184 3E 3G 3I 3D 3A 3H 3L 3K
+185 3E 3G 3J 3D 3A 3H 3L 3I
+186 3E 3G 3J 3D 3A 3H 3I 3K
+187 3E 3J 3I 3D 3A 3F 3L 3K
+188 3H 3J 3E 3D 3A 3F 3L 3K
+189 3H 3E 3I 3D 3A 3F 3L 3K
+190 3H 3J 3E 3D 3A 3F 3L 3I
+191 3H 3J 3E 3D 3A 3F 3I 3K
+192 3E 3G 3J 3D 3A 3F 3L 3K
+193 3E 3G 3I 3D 3A 3F 3L 3K
+194 3E 3G 3J 3D 3A 3F 3L 3I
+195 3E 3G 3J 3D 3A 3F 3I 3K
+196 3H 3G 3E 3D 3A 3F 3L 3K
+197 3H 3G 3J 3D 3A 3F 3L 3E
+198 3H 3G 3J 3D 3A 3F 3E 3K
+199 3H 3G 3E 3D 3A 3F 3L 3I
+200 3H 3G 3E 3D 3A 3F 3I 3K
+201 3H 3G 3J 3D 3A 3F 3E 3I
+202 3H 3J 3I 3C 3A 3G 3L 3K
+203 3H 3J 3I 3C 3A 3F 3L 3K
+204 3I 3G 3J 3C 3A 3F 3L 3K
+205 3H 3G 3J 3C 3A 3F 3L 3K
+206 3H 3G 3I 3C 3A 3F 3L 3K
+207 3H 3G 3J 3C 3A 3F 3L 3I
+208 3H 3G 3J 3C 3A 3F 3I 3K
+209 3E 3J 3I 3C 3A 3H 3L 3K
+210 3E 3J 3I 3C 3A 3G 3L 3K
+211 3E 3G 3J 3C 3A 3H 3L 3K
+212 3E 3G 3I 3C 3A 3H 3L 3K
+213 3E 3G 3J 3C 3A 3H 3L 3I
+214 3E 3G 3J 3C 3A 3H 3I 3K
+215 3E 3J 3I 3C 3A 3F 3L 3K
+216 3H 3J 3E 3C 3A 3F 3L 3K
+217 3H 3E 3I 3C 3A 3F 3L 3K
+218 3H 3J 3E 3C 3A 3F 3L 3I
+219 3H 3J 3E 3C 3A 3F 3I 3K
+220 3E 3G 3J 3C 3A 3F 3L 3K
+221 3E 3G 3I 3C 3A 3F 3L 3K
+222 3E 3G 3J 3C 3A 3F 3L 3I
+223 3E 3G 3J 3C 3A 3F 3I 3K
+224 3H 3G 3E 3C 3A 3F 3L 3K
+225 3H 3G 3J 3C 3A 3F 3L 3E
+226 3H 3G 3J 3C 3A 3F 3E 3K
+227 3H 3G 3E 3C 3A 3F 3L 3I
+228 3H 3G 3E 3C 3A 3F 3I 3K
+229 3H 3G 3J 3C 3A 3F 3E 3I
+230 3H 3J 3I 3C 3A 3D 3L 3K
+231 3I 3G 3J 3C 3A 3D 3L 3K
+232 3H 3G 3J 3C 3A 3D 3L 3K
+233 3H 3G 3I 3C 3A 3D 3L 3K
+234 3H 3G 3J 3C 3A 3D 3L 3I
+235 3H 3G 3J 3C 3A 3D 3I 3K
+236 3C 3J 3I 3D 3A 3F 3L 3K
+237 3H 3J 3F 3C 3A 3D 3L 3K
+238 3H 3F 3I 3C 3A 3D 3L 3K
+239 3H 3J 3F 3C 3A 3D 3L 3I
+240 3H 3J 3F 3C 3A 3D 3I 3K
+241 3C 3G 3J 3D 3A 3F 3L 3K
+242 3C 3G 3I 3D 3A 3F 3L 3K
+243 3C 3G 3J 3D 3A 3F 3L 3I
+244 3C 3G 3J 3D 3A 3F 3I 3K
+245 3H 3G 3F 3C 3A 3D 3L 3K
+246 3C 3G 3J 3D 3A 3F 3L 3H
+247 3H 3G 3J 3C 3A 3F 3D 3K
+248 3H 3G 3F 3C 3A 3D 3L 3I
+249 3H 3G 3F 3C 3A 3D 3I 3K
+250 3H 3G 3J 3C 3A 3F 3D 3I
+251 3E 3J 3I 3C 3A 3D 3L 3K
+252 3H 3J 3E 3C 3A 3D 3L 3K
+253 3H 3E 3I 3C 3A 3D 3L 3K
+254 3H 3J 3E 3C 3A 3D 3L 3I
+255 3H 3J 3E 3C 3A 3D 3I 3K
+256 3E 3G 3J 3C 3A 3D 3L 3K
+257 3E 3G 3I 3C 3A 3D 3L 3K
+258 3E 3G 3J 3C 3A 3D 3L 3I
+259 3E 3G 3J 3C 3A 3D 3I 3K
+260 3H 3G 3E 3C 3A 3D 3L 3K
+261 3H 3G 3J 3C 3A 3D 3L 3E
+262 3H 3G 3J 3C 3A 3D 3E 3K
+263 3H 3G 3E 3C 3A 3D 3L 3I
+264 3H 3G 3E 3C 3A 3D 3I 3K
+265 3H 3G 3J 3C 3A 3D 3E 3I
+266 3C 3J 3E 3D 3A 3F 3L 3K
+267 3C 3E 3I 3D 3A 3F 3L 3K
+268 3C 3J 3E 3D 3A 3F 3L 3I
+269 3C 3J 3E 3D 3A 3F 3I 3K
+270 3H 3E 3F 3C 3A 3D 3L 3K
+271 3H 3J 3F 3C 3A 3D 3L 3E
+272 3H 3J 3E 3C 3A 3F 3D 3K
+273 3H 3E 3F 3C 3A 3D 3L 3I
+274 3H 3E 3F 3C 3A 3D 3I 3K
+275 3H 3J 3E 3C 3A 3F 3D 3I
+276 3C 3G 3E 3D 3A 3F 3L 3K
+277 3C 3G 3J 3D 3A 3F 3L 3E
+278 3C 3G 3J 3D 3A 3F 3E 3K
+279 3C 3G 3E 3D 3A 3F 3L 3I
+280 3C 3G 3E 3D 3A 3F 3I 3K
+281 3C 3G 3J 3D 3A 3F 3E 3I
+282 3H 3G 3F 3C 3A 3D 3L 3E
+283 3H 3G 3E 3C 3A 3F 3D 3K
+284 3H 3G 3J 3C 3A 3F 3D 3E
+285 3H 3G 3E 3C 3A 3F 3D 3I
+286 3H 3J 3B 3A 3I 3G 3L 3K
+287 3H 3J 3B 3A 3I 3F 3L 3K
+288 3I 3J 3B 3F 3A 3G 3L 3K
+289 3H 3J 3B 3F 3A 3G 3L 3K
+290 3H 3G 3B 3A 3I 3F 3L 3K
+291 3H 3J 3B 3F 3A 3G 3L 3I
+292 3H 3J 3B 3F 3A 3G 3I 3K
+293 3E 3J 3B 3A 3I 3H 3L 3K
+294 3E 3J 3B 3A 3I 3G 3L 3K
+295 3E 3J 3B 3A 3H 3G 3L 3K
+296 3E 3G 3B 3A 3I 3H 3L 3K
+297 3E 3J 3B 3A 3H 3G 3L 3I
+298 3E 3J 3B 3A 3H 3G 3I 3K
+299 3E 3J 3B 3A 3I 3F 3L 3K
+300 3E 3J 3B 3F 3A 3H 3L 3K
+301 3E 3I 3B 3F 3A 3H 3L 3K
+302 3E 3J 3B 3F 3A 3H 3L 3I
+303 3E 3J 3B 3F 3A 3H 3I 3K
+304 3E 3J 3B 3F 3A 3G 3L 3K
+305 3E 3G 3B 3A 3I 3F 3L 3K
+306 3E 3J 3B 3F 3A 3G 3L 3I
+307 3E 3J 3B 3F 3A 3G 3I 3K
+308 3E 3G 3B 3F 3A 3H 3L 3K
+309 3H 3J 3B 3F 3A 3G 3L 3E
+310 3H 3J 3B 3F 3A 3G 3E 3K
+311 3E 3G 3B 3F 3A 3H 3L 3I
+312 3E 3G 3B 3F 3A 3H 3I 3K
+313 3H 3J 3B 3F 3A 3G 3E 3I
+314 3I 3J 3B 3D 3A 3H 3L 3K
+315 3I 3J 3B 3D 3A 3G 3L 3K
+316 3H 3J 3B 3D 3A 3G 3L 3K
+317 3I 3G 3B 3D 3A 3H 3L 3K
+318 3H 3J 3B 3D 3A 3G 3L 3I
+319 3H 3J 3B 3D 3A 3G 3I 3K
+320 3I 3J 3B 3D 3A 3F 3L 3K
+321 3H 3J 3B 3D 3A 3F 3L 3K
+322 3H 3I 3B 3D 3A 3F 3L 3K
+323 3H 3J 3B 3D 3A 3F 3L 3I
+324 3H 3J 3B 3D 3A 3F 3I 3K
+325 3F 3J 3B 3D 3A 3G 3L 3K
+326 3I 3G 3B 3D 3A 3F 3L 3K
+327 3F 3J 3B 3D 3A 3G 3L 3I
+328 3F 3J 3B 3D 3A 3G 3I 3K
+329 3H 3G 3B 3D 3A 3F 3L 3K
+330 3H 3G 3B 3D 3A 3F 3L 3J
+331 3H 3G 3B 3D 3A 3F 3J 3K
+332 3H 3G 3B 3D 3A 3F 3L 3I
+333 3H 3G 3B 3D 3A 3F 3I 3K
+334 3H 3G 3B 3D 3A 3F 3I 3J
+335 3E 3J 3B 3A 3I 3D 3L 3K
+336 3E 3J 3B 3D 3A 3H 3L 3K
+337 3E 3I 3B 3D 3A 3H 3L 3K
+338 3E 3J 3B 3D 3A 3H 3L 3I
+339 3E 3J 3B 3D 3A 3H 3I 3K
+340 3E 3J 3B 3D 3A 3G 3L 3K
+341 3E 3G 3B 3A 3I 3D 3L 3K
+342 3E 3J 3B 3D 3A 3G 3L 3I
+343 3E 3J 3B 3D 3A 3G 3I 3K
+344 3E 3G 3B 3D 3A 3H 3L 3K
+345 3H 3J 3B 3D 3A 3G 3L 3E
+346 3H 3J 3B 3D 3A 3G 3E 3K
+347 3E 3G 3B 3D 3A 3H 3L 3I
+348 3E 3G 3B 3D 3A 3H 3I 3K
+349 3H 3J 3B 3D 3A 3G 3E 3I
+350 3E 3J 3B 3D 3A 3F 3L 3K
+351 3E 3I 3B 3D 3A 3F 3L 3K
+352 3E 3J 3B 3D 3A 3F 3L 3I
+353 3E 3J 3B 3D 3A 3F 3I 3K
+354 3H 3E 3B 3D 3A 3F 3L 3K
+355 3H 3J 3B 3D 3A 3F 3L 3E
+356 3H 3J 3B 3D 3A 3F 3E 3K
+357 3H 3E 3B 3D 3A 3F 3L 3I
+358 3H 3E 3B 3D 3A 3F 3I 3K
+359 3H 3J 3B 3D 3A 3F 3E 3I
+360 3E 3G 3B 3D 3A 3F 3L 3K
+361 3E 3G 3B 3D 3A 3F 3L 3J
+362 3E 3G 3B 3D 3A 3F 3J 3K
+363 3E 3G 3B 3D 3A 3F 3L 3I
+364 3E 3G 3B 3D 3A 3F 3I 3K
+365 3E 3G 3B 3D 3A 3F 3I 3J
+366 3H 3G 3B 3D 3A 3F 3L 3E
+367 3H 3G 3B 3D 3A 3F 3E 3K
+368 3H 3G 3B 3D 3A 3F 3E 3J
+369 3H 3G 3B 3D 3A 3F 3E 3I
+370 3I 3J 3B 3C 3A 3H 3L 3K
+371 3I 3J 3B 3C 3A 3G 3L 3K
+372 3H 3J 3B 3C 3A 3G 3L 3K
+373 3I 3G 3B 3C 3A 3H 3L 3K
+374 3H 3J 3B 3C 3A 3G 3L 3I
+375 3H 3J 3B 3C 3A 3G 3I 3K
+376 3I 3J 3B 3C 3A 3F 3L 3K
+377 3H 3J 3B 3C 3A 3F 3L 3K
+378 3H 3I 3B 3C 3A 3F 3L 3K
+379 3H 3J 3B 3C 3A 3F 3L 3I
+380 3H 3J 3B 3C 3A 3F 3I 3K
+381 3C 3J 3B 3F 3A 3G 3L 3K
+382 3I 3G 3B 3C 3A 3F 3L 3K
+383 3C 3J 3B 3F 3A 3G 3L 3I
+384 3C 3J 3B 3F 3A 3G 3I 3K
+385 3H 3G 3B 3C 3A 3F 3L 3K
+386 3H 3G 3B 3C 3A 3F 3L 3J
+387 3H 3G 3B 3C 3A 3F 3J 3K
+388 3H 3G 3B 3C 3A 3F 3L 3I
+389 3H 3G 3B 3C 3A 3F 3I 3K
+390 3H 3G 3B 3C 3A 3F 3I 3J
+391 3E 3J 3B 3A 3I 3C 3L 3K
+392 3E 3J 3B 3C 3A 3H 3L 3K
+393 3E 3I 3B 3C 3A 3H 3L 3K
+394 3E 3J 3B 3C 3A 3H 3L 3I
+395 3E 3J 3B 3C 3A 3H 3I 3K
+396 3E 3J 3B 3C 3A 3G 3L 3K
+397 3E 3G 3B 3A 3I 3C 3L 3K
+398 3E 3J 3B 3C 3A 3G 3L 3I
+399 3E 3J 3B 3C 3A 3G 3I 3K
+400 3E 3G 3B 3C 3A 3H 3L 3K
+401 3H 3J 3B 3C 3A 3G 3L 3E
+402 3H 3J 3B 3C 3A 3G 3E 3K
+403 3E 3G 3B 3C 3A 3H 3L 3I
+404 3E 3G 3B 3C 3A 3H 3I 3K
+405 3H 3J 3B 3C 3A 3G 3E 3I
+406 3E 3J 3B 3C 3A 3F 3L 3K
+407 3E 3I 3B 3C 3A 3F 3L 3K
+408 3E 3J 3B 3C 3A 3F 3L 3I
+409 3E 3J 3B 3C 3A 3F 3I 3K
+410 3H 3E 3B 3C 3A 3F 3L 3K
+411 3H 3J 3B 3C 3A 3F 3L 3E
+412 3H 3J 3B 3C 3A 3F 3E 3K
+413 3H 3E 3B 3C 3A 3F 3L 3I
+414 3H 3E 3B 3C 3A 3F 3I 3K
+415 3H 3J 3B 3C 3A 3F 3E 3I
+416 3E 3G 3B 3C 3A 3F 3L 3K
+417 3E 3G 3B 3C 3A 3F 3L 3J
+418 3E 3G 3B 3C 3A 3F 3J 3K
+419 3E 3G 3B 3C 3A 3F 3L 3I
+420 3E 3G 3B 3C 3A 3F 3I 3K
+421 3E 3G 3B 3C 3A 3F 3I 3J
+422 3H 3G 3B 3C 3A 3F 3L 3E
+423 3H 3G 3B 3C 3A 3F 3E 3K
+424 3H 3G 3B 3C 3A 3F 3E 3J
+425 3H 3G 3B 3C 3A 3F 3E 3I
+426 3I 3J 3B 3C 3A 3D 3L 3K
+427 3H 3J 3B 3C 3A 3D 3L 3K
+428 3H 3I 3B 3C 3A 3D 3L 3K
+429 3H 3J 3B 3C 3A 3D 3L 3I
+430 3H 3J 3B 3C 3A 3D 3I 3K
+431 3C 3J 3B 3D 3A 3G 3L 3K
+432 3I 3G 3B 3C 3A 3D 3L 3K
+433 3C 3J 3B 3D 3A 3G 3L 3I
+434 3C 3J 3B 3D 3A 3G 3I 3K
+435 3H 3G 3B 3C 3A 3D 3L 3K
+436 3H 3G 3B 3C 3A 3D 3L 3J
+437 3H 3G 3B 3C 3A 3D 3J 3K
+438 3H 3G 3B 3C 3A 3D 3L 3I
+439 3H 3G 3B 3C 3A 3D 3I 3K
+440 3H 3G 3B 3C 3A 3D 3I 3J
+441 3C 3J 3B 3D 3A 3F 3L 3K
+442 3C 3I 3B 3D 3A 3F 3L 3K
+443 3C 3J 3B 3D 3A 3F 3L 3I
+444 3C 3J 3B 3D 3A 3F 3I 3K
+445 3H 3F 3B 3C 3A 3D 3L 3K
+446 3C 3J 3B 3D 3A 3F 3L 3H
+447 3H 3J 3B 3C 3A 3F 3D 3K
+448 3H 3F 3B 3C 3A 3D 3L 3I
+449 3H 3F 3B 3C 3A 3D 3I 3K
+450 3H 3J 3B 3C 3A 3F 3D 3I
+451 3C 3G 3B 3D 3A 3F 3L 3K
+452 3C 3G 3B 3D 3A 3F 3L 3J
+453 3C 3G 3B 3D 3A 3F 3J 3K
+454 3C 3G 3B 3D 3A 3F 3L 3I
+455 3C 3G 3B 3D 3A 3F 3I 3K
+456 3C 3G 3B 3D 3A 3F 3I 3J
+457 3C 3G 3B 3D 3A 3F 3L 3H
+458 3H 3G 3B 3C 3A 3F 3D 3K
+459 3H 3G 3B 3C 3A 3F 3D 3J
+460 3H 3G 3B 3C 3A 3F 3D 3I
+461 3E 3J 3B 3C 3A 3D 3L 3K
+462 3E 3I 3B 3C 3A 3D 3L 3K
+463 3E 3J 3B 3C 3A 3D 3L 3I
+464 3E 3J 3B 3C 3A 3D 3I 3K
+465 3H 3E 3B 3C 3A 3D 3L 3K
+466 3H 3J 3B 3C 3A 3D 3L 3E
+467 3H 3J 3B 3C 3A 3D 3E 3K
+468 3H 3E 3B 3C 3A 3D 3L 3I
+469 3H 3E 3B 3C 3A 3D 3I 3K
+470 3H 3J 3B 3C 3A 3D 3E 3I
+471 3E 3G 3B 3C 3A 3D 3L 3K
+472 3E 3G 3B 3C 3A 3D 3L 3J
+473 3E 3G 3B 3C 3A 3D 3J 3K
+474 3E 3G 3B 3C 3A 3D 3L 3I
+475 3E 3G 3B 3C 3A 3D 3I 3K
+476 3E 3G 3B 3C 3A 3D 3I 3J
+477 3H 3G 3B 3C 3A 3D 3L 3E
+478 3H 3G 3B 3C 3A 3D 3E 3K
+479 3H 3G 3B 3C 3A 3D 3E 3J
+480 3H 3G 3B 3C 3A 3D 3E 3I
+481 3C 3E 3B 3D 3A 3F 3L 3K
+482 3C 3J 3B 3D 3A 3F 3L 3E
+483 3C 3J 3B 3D 3A 3F 3E 3K
+484 3C 3E 3B 3D 3A 3F 3L 3I
+485 3C 3E 3B 3D 3A 3F 3I 3K
+486 3C 3J 3B 3D 3A 3F 3E 3I
+487 3H 3F 3B 3C 3A 3D 3L 3E
+488 3H 3E 3B 3C 3A 3F 3D 3K
+489 3H 3J 3B 3C 3A 3F 3D 3E
+490 3H 3E 3B 3C 3A 3F 3D 3I
+491 3C 3G 3B 3D 3A 3F 3L 3E
+492 3C 3G 3B 3D 3A 3F 3E 3K
+493 3C 3G 3B 3D 3A 3F 3E 3J
+494 3C 3G 3B 3D 3A 3F 3E 3I
+495 3H 3G 3B 3C 3A 3F 3D 3E`;
+const LAB_ANNEX_SLOTS = ["A", "B", "D", "E", "G", "I", "K", "L"];
+const LAB_ANNEX_C = {};
+LAB_ANNEX_RAW.trim().split("\n").forEach(line => {
+  const parts = line.trim().split(/\s+/);
+  LAB_ANNEX_C[parseInt(parts[0], 10)] = parts.slice(1);
+});
+const LAB_ANNEX_REVERSE = {};
+Object.entries(LAB_ANNEX_C).forEach(([num, row]) => {
+  const key = row.map(v => v[1]).sort().join("");
+  LAB_ANNEX_REVERSE[key] = row;
+});
+
+function labAnnexLookup(qualifyingGroups) {
+  const key = [...qualifyingGroups].sort().join("");
+  let row = LAB_ANNEX_REVERSE[key];
+  if (!row) {
+    // Fallback: closest match by overlap (mirrors annex_c.py's fallback;
+    // shouldn't happen with a complete 495-row table, but stay safe).
+    let bestOverlap = -1;
+    for (const [k, v] of Object.entries(LAB_ANNEX_REVERSE)) {
+      const kset = new Set(k.split(""));
+      let overlap = 0;
+      qualifyingGroups.forEach(g => { if (kset.has(g)) overlap++; });
+      if (overlap > bestOverlap) { bestOverlap = overlap; row = v; }
+    }
+  }
+  const result = {};
+  LAB_ANNEX_SLOTS.forEach((slot, i) => { result[slot] = row[i][1]; });
+  return result;
+}
+
+function labPoints(r) { return r.won * 3 + r.drawn; }
+function labGoalDiff(r) { return r.goals_for - r.goals_against; }
+function labSortKey(r) {
+  return [-labPoints(r), -labGoalDiff(r), -r.goals_for, LAB_FIFA_RANKINGS[r.name] ?? 999];
+}
+function labCompareKeys(ka, kb) {
+  for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+  return 0;
+}
+function labNewRecord(name, group) {
+  return { name, group, played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0 };
+}
+function labApplyResult(records, home, away, hs, as_) {
+  const h = records[home], a = records[away];
+  if (!h || !a) return;
+  h.played++; a.played++;
+  h.goals_for += hs; h.goals_against += as_;
+  a.goals_for += as_; a.goals_against += hs;
+  if (hs > as_) { h.won++; a.lost++; }
+  else if (hs === as_) { h.drawn++; a.drawn++; }
+  else { a.won++; h.lost++; }
+}
+
+function labBuildGroupStandings(group, results) {
+  const records = {};
+  LAB_GROUPS[group].forEach(t => records[t] = labNewRecord(t, group));
+  const groupResults = results.filter(r => r.group === group);
+  groupResults.forEach(r => labApplyResult(records, r.home, r.away, r.home_score ?? 0, r.away_score ?? 0));
+  return labSortGroup(Object.values(records), groupResults);
+}
+
+function labSortGroup(records, results) {
+  const basic = [...records].sort((a, b) =>
+    labPoints(b) - labPoints(a) || labGoalDiff(b) - labGoalDiff(a) || b.goals_for - a.goals_for
+  );
+  const final = [];
+  let i = 0;
+  while (i < basic.length) {
+    let j = i + 1;
+    while (j < basic.length &&
+           labPoints(basic[j]) === labPoints(basic[i]) &&
+           labGoalDiff(basic[j]) === labGoalDiff(basic[i]) &&
+           basic[j].goals_for === basic[i].goals_for) j++;
+    let tied = basic.slice(i, j);
+    tied = tied.length > 1 ? labBreakH2H(tied, results) : [...tied].sort((a, b) => labCompareKeys(labSortKey(a), labSortKey(b)));
+    final.push(...tied);
+    i = j;
+  }
+  return final;
+}
+
+function labBreakH2H(tied, results) {
+  const names = new Set(tied.map(r => r.name));
+  const h2h = {};
+  tied.forEach(r => h2h[r.name] = labNewRecord(r.name, r.group));
+  results.forEach(res => {
+    if (names.has(res.home) && names.has(res.away)) {
+      labApplyResult(h2h, res.home, res.away, res.home_score ?? 0, res.away_score ?? 0);
+    }
+  });
+  return Object.values(h2h).sort((a, b) => labCompareKeys(labSortKey(a), labSortKey(b)));
+}
+
+function labBuildStandings(results) {
+  const out = {};
+  Object.keys(LAB_GROUPS).forEach(g => out[g] = labBuildGroupStandings(g, results));
+  return out;
+}
+
+function labRankThirds(standings) {
+  const thirds = Object.entries(standings)
+    .filter(([, recs]) => recs.length >= 3)
+    .map(([g, recs]) => [g, recs[2]]);
+  thirds.sort((a, b) => labCompareKeys(labSortKey(a[1]), labSortKey(b[1])));
+  return thirds;
+}
+
+function labTeamEntry(rec, group, pos) {
+  if (rec) return { team: rec.name, seed: `${pos}${group}`, group, pos };
+  return { team: null, seed: `${pos}${group}` };
+}
+
+function labProjectBracket(standings, r32Kickoffs) {
+  const thirds = labRankThirds(standings);
+  const qualifying8 = new Set(thirds.slice(0, 8).map(([g]) => g));
+  const annex = labAnnexLookup(qualifying8);
+  const thirdByGroup = {};
+  thirds.forEach(([g, rec]) => thirdByGroup[g] = rec);
+
+  const matches = [];
+  LAB_FIXED_R32.forEach(slotDef => {
+    const { group: g1, pos: p1 } = slotDef.t1;
+    const { group: g2, pos: p2 } = slotDef.t2;
+    const t1 = (standings[g1] || [])[p1 - 1];
+    const t2 = (standings[g2] || [])[p2 - 1];
+    matches.push({
+      slot: slotDef.slot,
+      match_number: LAB_MATCH_NUMBERS[slotDef.slot],
+      kickoff: (r32Kickoffs || {})[slotDef.slot],
+      home: labTeamEntry(t1, g1, p1),
+      away: labTeamEntry(t2, g2, p2),
+    });
+  });
+  LAB_THIRD_SLOTS.forEach(slotLetter => {
+    const srcGroup = annex[slotLetter];
+    const winner = (standings[slotLetter] || [])[0];
+    const third = srcGroup ? thirdByGroup[srcGroup] : null;
+    const slot = `R${slotLetter}`;
+    matches.push({
+      slot,
+      match_number: LAB_MATCH_NUMBERS[slot],
+      kickoff: (r32Kickoffs || {})[slot],
+      home: labTeamEntry(winner, slotLetter, 1),
+      away: third ? labTeamEntry(third, srcGroup, 3) : { team: null, seed: "3?" },
+    });
+  });
+  matches.sort((a, b) => LAB_BRACKET_TREE_ORDER.indexOf(a.slot) - LAB_BRACKET_TREE_ORDER.indexOf(b.slot));
+  return matches;
+}
+
+// R32 onward: checks real bookmaker odds first, same convention as
+// bot/forecast.py's _match_probs (sorted "TeamA|TeamB" key) - R32 matchups
+// are fully determined by group standings well before kickoff, so real
+// odds for them may already exist by the time this runs. Falls back to the
+// Elo estimate when none exist yet, which in practice is every R16-onward
+// matchup, since sportsbooks don't price a match between two teams who
+// haven't even played their earlier round yet.
+const LAB_DRAW_PROB = 0.25;
+function labRealOddsFor(home, away) {
+  const real = labRealOdds[[home, away].sort().join("|")];
+  if (!real) return null;
+  return real.home === home
+    ? { pHome: real.p_home, pDraw: real.p_draw }
+    : { pHome: real.p_away, pDraw: real.p_draw };
+}
+function labKnockoutWinProb(home, away) {
+  const real = labRealOddsFor(home, away);
+  if (real) return real.pHome + real.pDraw / 2;
+  const strength = t => Math.pow(10, (labEloRatings[t] ?? 1500) / 400);
+  const sh = strength(home), sa = strength(away);
+  const pHome = (1 - LAB_DRAW_PROB) * sh / (sh + sa);
+  return pHome + LAB_DRAW_PROB / 2;
+}
+
+const LAB_R16_NUMBERS = [89, 90, 93, 94, 91, 92, 95, 96];
+const LAB_QF_NUMBERS = [97, 98, 99, 100];
+const LAB_SF_NUMBERS = [101, 102];
+const LAB_FINAL_NUMBER = 104;
+const LAB_BRONZE_NUMBER = 103;
+const LAB_TBD_ENTRY = { team: null, flag: "🏳", label: tr("tbd"), seed: "?", prob: 0 };
+
+function labAdvanceEntry(teamEntry, winProb) {
+  if (!teamEntry?.team) return LAB_TBD_ENTRY;
+  return { ...teamEntry, prob: Math.round(winProb * 10000) / 10000 };
+}
+
+// Past R32, a team's original group seed ("1F") no longer means anything to
+// the matchup in front of you - what matters is which earlier match it came
+// out of. relabel() swaps the seed for that: "W93" (winner of match 93) for
+// a normal advance, "L101" for the Bronze Final's SF-loser feeders.
+function relabelSeed(entry, prefix, srcNumber) {
+  if (!entry || entry === LAB_TBD_ENTRY) return { ...LAB_TBD_ENTRY, seed: `${prefix}${srcNumber}` };
+  return { ...entry, seed: `${prefix}${srcNumber}` };
+}
+
+function labProjectOneMatch(homeEntry, awayEntry, matchNumber) {
+  if (!homeEntry?.team || !awayEntry?.team) {
+    return {
+      match_number: matchNumber,
+      home: homeEntry || LAB_TBD_ENTRY,
+      away: awayEntry || LAB_TBD_ENTRY,
+      winner: null, loser: null,
+    };
+  }
+  const pHome = labKnockoutWinProb(homeEntry.team, awayEntry.team);
+  const homeOut = labAdvanceEntry(homeEntry, pHome);
+  const awayOut = labAdvanceEntry(awayEntry, 1 - pHome);
+
+  // Who plays whom next is a fixed lookup (BRACKET_TREE_ORDER) - no
+  // probability involved. Win probability is only the fallback for matches
+  // the user hasn't explicitly scored; an explicit pick always wins out.
+  const override = labLaterOverrides[matchNumber];
+  let winner, loser;
+  if (override && override.winner) {
+    winner = override.winner === homeEntry.team ? homeOut : awayOut;
+    loser = override.winner === homeEntry.team ? awayOut : homeOut;
+  } else {
+    winner = pHome >= 0.5 ? homeOut : awayOut;
+    loser = pHome >= 0.5 ? awayOut : homeOut;
+  }
+  return { match_number: matchNumber, home: homeOut, away: awayOut, winner, loser };
+}
+
+// Given the 16 R32 matches (labProjectBracket()'s output), projects a
+// single most-likely winner forward through R16, QF, SF, the Final, and
+// the Bronze final - reflecting whatever the user has edited/scored so
+// far, recomputed fresh on every render the same way the rest of the Lab
+// already is. Read-only (not independently click-to-edit yet).
+function labProjectKnockoutRounds(r32Matches) {
+  // An R32 match the user has explicitly scored (labR32Overrides) keeps its
+  // user-picked winner; everything else falls back to Elo/odds, same as a
+  // never-touched R32 matchup already does elsewhere in the Lab.
+  let current = r32Matches.map(m => {
+    const h = m.home, a = m.away;
+    if (!h?.team || !a?.team) return h?.team ? h : a;
+    const pick = labR32Overrides[m.slot];
+    if (pick && pick.winner) return pick.winner === h.team ? h : a;
+    const pHome = labKnockoutWinProb(h.team, a.team);
+    return pHome >= 0.5 ? h : a;
+  });
+  // Parallel array: currentSrc[i] is the match number that produced current[i].
+  let currentSrc = r32Matches.map(m => m.match_number);
+
+  const out = [];
+  const sfLosers = [];
+  const sfLoserSrc = [];
+  [LAB_R16_NUMBERS, LAB_QF_NUMBERS, LAB_SF_NUMBERS].forEach(roundNumbers => {
+    const nextRound = [];
+    const nextSrc = [];
+    roundNumbers.forEach((number, i) => {
+      const home = relabelSeed(current[2 * i], "W", currentSrc[2 * i]);
+      const away = relabelSeed(current[2 * i + 1], "W", currentSrc[2 * i + 1]);
+      const match = labProjectOneMatch(home, away, number);
+      out.push(match);
+      nextRound.push(match.winner || LAB_TBD_ENTRY);
+      nextSrc.push(number);
+      if (roundNumbers === LAB_SF_NUMBERS) {
+        sfLosers.push(match.loser || LAB_TBD_ENTRY);
+        sfLoserSrc.push(number);
+      }
+    });
+    current = nextRound;
+    currentSrc = nextSrc;
+  });
+
+  out.push(labProjectOneMatch(
+    relabelSeed(current[0], "W", currentSrc[0]),
+    relabelSeed(current[1], "W", currentSrc[1]),
+    LAB_FINAL_NUMBER,
+  ));
+  if (sfLosers.length === 2) {
+    out.push(labProjectOneMatch(
+      relabelSeed(sfLosers[0], "L", sfLoserSrc[0]),
+      relabelSeed(sfLosers[1], "L", sfLoserSrc[1]),
+      LAB_BRONZE_NUMBER,
+    ));
+  }
+  return out;
+}
+
+// ── LAB STATE & RENDERING ─────────────────────────────────────────────────────
+let labInitialized = false;
+let labGroupOverrides = {};   // matchKey -> {home_score, away_score} - user-scored group games
+let labR32Overrides = {};     // slot -> {home_score, away_score, winner} - user-scored R32 games
+let labR32ScoredFor = {};     // slot -> {home, away} team-name snapshot at the time it was scored
+let labLaterOverrides = {};   // match_number -> {home_score, away_score, winner} - user-scored R16+ games
+let labLaterScoredFor = {};   // match_number -> {home, away} team-name snapshot at the time it was scored
+let labFixtureProbs = {};     // matchKey -> {p_home, p_draw, p_away} odds-implied, for the predicted baseline
+let labEloRatings = {};       // team -> Elo rating, fallback for projecting R32-Final when no real odds exist for that matchup yet
+let labRealOdds = {};         // sorted "TeamA|TeamB" -> {home,away,p_home,p_draw,p_away}, checked before falling back to Elo
+let labPrevBracketBySlot = {};
+let labPrevPositions = {};
+let labLastStandings = {};
+let labLastMovedTeams = new Set();
+let labOpenSlot = null;
+let labOpenLaterNumber = null; // match_number of the open R16+ modal, mutually exclusive with labOpenSlot
+let labModalPrevTeams = {}; // slot/number -> {home, away} last rendered in the modal, to detect a live matchup change
+let labNotices = [];
+let labNoticeSeq = 0;
+
+function labMatchKey(home, away) { return `${home}_${away}`; }
+
+// Whichever of win/draw/loss is most likely becomes the placeholder result
+// for a game the user hasn't scored - a minimal-margin win (1-0) or a 0-0
+// draw, whichever the odds favor. This seeds the Lab's baseline from the
+// same real odds/Elo data as the Odds-Based Projection tab, instead of an
+// uninformative 0-0 for every single remaining game.
+function labFavoredScore(probs) {
+  if (!probs) return { home_score: 0, away_score: 0, outcome: "D" };
+  const { p_home, p_draw, p_away } = probs;
+  if (p_home >= p_draw && p_home >= p_away) return { home_score: 1, away_score: 0, outcome: "H" };
+  if (p_away >= p_draw && p_away >= p_home) return { home_score: 0, away_score: 1, outcome: "A" };
+  return { home_score: 0, away_score: 0, outcome: "D" };
+}
+
+// The effective result the Lab currently uses for one remaining group
+// game: a user-entered score takes priority, then (for a match already
+// kicked off) the real live score, then the odds-favored placeholder.
+function labResultFor(m) {
+  const key = labMatchKey(m.home, m.away);
+  const ov = labGroupOverrides[key];
+  if (ov) return { home_score: ov.home_score, away_score: ov.away_score, mode: "edited" };
+  if (m.status === "live" || m.status === "ht") {
+    return { home_score: m.home_score, away_score: m.away_score, mode: "live" };
+  }
+  const probs = labFixtureProbs[key];
+  const fav = labFavoredScore(probs);
+  return { home_score: fav.home_score, away_score: fav.away_score, mode: "predicted", outcome: fav.outcome, probs };
+}
+
+function labPushNotice(text) {
+  const id = ++labNoticeSeq;
+  labNotices.push({ id, text });
+  setTimeout(() => {
+    labNotices = labNotices.filter(n => n.id !== id);
+    renderLabNotices();
+  }, 5000);
+}
+
+function renderLabNotices() {
+  const el = document.getElementById("lab-notifications");
+  el.innerHTML = labNotices.map(n =>
+    `<div class="lab-notice"><span>${n.text}</span><button type="button" data-id="${n.id}">✕</button></div>`
+  ).join("");
+  el.querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      labNotices = labNotices.filter(n => n.id !== parseInt(btn.dataset.id, 10));
+      renderLabNotices();
+    });
+  });
+}
+
+function labComputeAndRender() {
+  const finished = allMatches.filter(m => m.status === "ft")
+    .map(m => ({ home: m.home, away: m.away, group: m.group, home_score: m.home_score, away_score: m.away_score }));
+  const remaining = allMatches.filter(m => m.status !== "ft");
+
+  const hypothetical = remaining.map(m => {
+    const r = labResultFor(m);
+    return { home: m.home, away: m.away, group: m.group, home_score: r.home_score, away_score: r.away_score };
+  });
+
+  const results = finished.concat(hypothetical);
+  const standings = labBuildStandings(results);
+  labLastStandings = standings;
+
+  // Computed once per cycle, before labPrevPositions is overwritten, so both
+  // the scenario table and any open modal's group table agree on which rows
+  // just moved (the modal renders later in this same function).
+  const newPositions = labAllPositions(standings);
+  labLastMovedTeams = new Set(
+    Object.keys(newPositions).filter(name => labPrevPositions[name] && labPrevPositions[name] !== newPositions[name])
+  );
+  labPrevPositions = newPositions;
+
+  const r32Kickoffs = {};
+  (cachedState.bracket || []).forEach(m => { r32Kickoffs[m.slot] = m.kickoff; });
+  const bracket = labProjectBracket(standings, r32Kickoffs);
+
+  // A prediction only means something for the specific two teams it was
+  // made for. If an upstream edit changed who's actually playing that
+  // match, the old pick is meaningless - clear it and say why, rather than
+  // silently keeping a winner pick attached to the wrong teams. Clearing a
+  // pick can itself change who arrives at a *later* match (e.g. clearing
+  // an R16 pick changes who the QF projects forward), so this re-projects
+  // and re-checks until nothing more needs clearing - bounded by the 5
+  // rounds after R32, there's no way this loops more than that.
+  let laterRounds = labProjectKnockoutRounds(bracket);
+  for (let pass = 0; pass < 6; pass++) {
+    let invalidated = false;
+    bracket.forEach(m => {
+      const snap = labR32ScoredFor[m.slot];
+      if (snap && (snap.home !== m.home.team || snap.away !== m.away.team)) {
+        delete labR32Overrides[m.slot];
+        delete labR32ScoredFor[m.slot];
+        labPushNotice(trPredictionCleared(m.match_number, "group"));
+        invalidated = true;
+      }
+    });
+    laterRounds.forEach(m => {
+      const snap = labLaterScoredFor[m.match_number];
+      if (snap && (snap.home !== m.home.team || snap.away !== m.away.team)) {
+        delete labLaterOverrides[m.match_number];
+        delete labLaterScoredFor[m.match_number];
+        labPushNotice(trPredictionCleared(m.match_number, "earlier"));
+        invalidated = true;
+      }
+    });
+    if (!invalidated) break;
+    laterRounds = labProjectKnockoutRounds(bracket);
+  }
+
+  renderLabBracket(bracket, laterRounds);
+  renderLabStandings(standings, labLastMovedTeams);
+  renderLabThirds(standings, labLastMovedTeams);
+  renderLabNotices();
+  if (labOpenSlot) renderLabModal(labOpenSlot, bracket);
+  if (labOpenLaterNumber) renderLabLaterModal(labOpenLaterNumber, laterRounds);
+  labInitialized = true;
+}
+
+function renderLabBracket(bracket, laterRounds) {
+  const grid = document.getElementById("lab-bracket-grid");
+  const laterByNumber = {};
+  (laterRounds || []).forEach(m => { laterByNumber[m.match_number] = m; });
+  let html = `<div class="round-title" style="grid-column:1">${tr("round_r32")}</div>`;
+  html += bracket.map((m, i) => {
+    const prev = labPrevBracketBySlot[m.slot];
+    const changed = prev && (prev.home?.team !== m.home?.team || prev.away?.team !== m.away?.team);
+    labPrevBracketBySlot[m.slot] = m;
+
+    const pick = labR32Overrides[m.slot];
+    return resultCard(m.match_number, m.home, m.away, {
+      homeScore: pick ? pick.home_score : null,
+      awayScore: pick ? pick.away_score : null,
+      extraClass: `lab-card${changed ? " lab-flash" : ""}${pick ? " lab-picked" : ""}`,
+      style: `grid-row:${i + 2}`,
+      attrs: `data-slot="${m.slot}"`,
+    });
+  }).join("");
+
+  for (const r of PLACEHOLDER_ROUNDS) {
+    const groupSize = Math.pow(2, r.round - 1);
+    html += `<div class="round-title" style="grid-column:${r.round}">${r.title}</div>`;
+
+    const renderLaterSlot = (num, rowStyle) => {
+      const m = laterByNumber[num];
+      if (m && (m.home?.team || m.away?.team)) {
+        const pick = labLaterOverrides[num];
+        return resultCard(num, m.home, m.away, {
+          homeScore: pick ? pick.home_score : null,
+          awayScore: pick ? pick.away_score : null,
+          homeIsWinner: m.winner ? m.winner.team === m.home.team : undefined,
+          awayIsWinner: m.winner ? m.winner.team === m.away.team : undefined,
+          extraClass: `lab-card later-round${pick ? " lab-picked" : ""}`,
+          style: `grid-column:${r.round};${rowStyle}`,
+          attrs: `data-number="${num}"`,
+        });
+      }
+      return `<div class="lab-tbd" style="grid-column:${r.round};${rowStyle}">${num}</div>`;
+    };
+
+    if (r.round === 4) {
+      const sfSpan = groupSize - 1;
+      r.numbers.forEach((num, idx) => {
+        const rowStart = idx * groupSize + 2 + (idx === 1 ? 1 : 0);
+        html += renderLaterSlot(num, `grid-row:${rowStart} / span ${sfSpan}`);
+      });
+      html += renderLaterSlot(103, `grid-row:${groupSize + 1} / span 2`);
+      continue;
+    }
+    r.numbers.forEach((num, idx) => {
+      const rowStart = idx * groupSize + 2;
+      html += renderLaterSlot(num, `grid-row:${rowStart} / span ${groupSize}`);
+    });
+  }
+
+  grid.innerHTML = html;
+  grid.querySelectorAll(".lab-card[data-slot]").forEach(card => {
+    card.addEventListener("click", () => openLabModal(card.dataset.slot));
+  });
+  wireOddsBadges(grid);
+  grid.querySelectorAll(".lab-card[data-number]").forEach(card => {
+    card.addEventListener("click", () => openLabLaterModal(parseInt(card.dataset.number, 10)));
+  });
+}
+
+function labAllPositions(standings) {
+  const positions = {};
+  Object.values(standings).forEach(teams => {
+    teams.forEach((t, i) => { positions[t.name] = i + 1; });
+  });
+  return positions;
+}
+
+// Shared by the scenario-wide standings grid and the per-matchup modal, so
+// MP/GD/Pts and the just-moved flash always read identically in both places.
+function renderLabGroupTable(g, teams, movedTeams) {
+  const rows = teams.map((t, i) => {
+    const pos = i + 1;
+    const moved = movedTeams.has(t.name);
+    return `<div class="standings-row${moved ? " lab-moved" : ""}">
+      <div class="pos-badge p${pos}">${pos}</div>
+      <div class="standings-team">
+        ${flagImg(t.name)}
+        <span class="name">${tn(t.name)}</span>
+      </div>
+      <div class="standings-col">${t.played}</div>
+      <div class="standings-col">${labGoalDiff(t) >= 0 ? "+" : ""}${labGoalDiff(t)}</div>
+      <div class="standings-col">${labPoints(t)}</div>
+    </div>`;
+  }).join("");
+  return `<div class="group-card">
+    <div class="group-head">
+      <span class="gh-name">${tr("group_label")} ${g}</span>
+      <span class="gh-col" style="width:54px"></span>
+      <span class="gh-col">${tr("mp")}</span><span class="gh-col">${tr("gd")}</span><span class="gh-col">${tr("pts")}</span>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+function renderLabStandings(standings, movedTeams) {
+  const grid = document.getElementById("lab-standings-grid");
+  const groups = "ABCDEFGHIJKL".split("");
+  grid.innerHTML = groups.map(g => renderLabGroupTable(g, standings[g] || [], movedTeams)).join("");
+}
+
+function renderLabThirds(standings, movedTeams) {
+  document.getElementById("lab-thirds-list").innerHTML = renderLabThirdsTable(standings, movedTeams);
+}
+
+// Cross-group third-place ranking, same shape as renderLabGroupTable so it
+// drops into the modal as a normal third column - top 8 qualify for R32.
+function renderLabThirdsTable(standings, movedTeams) {
+  const thirds = labRankThirds(standings);
+  const rows = thirds.map(([g, rec], i) => {
+    const rank = i + 1;
+    const badgeCls = rank <= 8 ? "qualify" : "eliminated";
+    const moved = movedTeams.has(rec.name);
+    return `<div class="standings-row${moved ? " lab-moved" : ""}">
+      <div class="pos-badge ${badgeCls}">${rank}</div>
+      <div class="standings-team">
+        ${flagImg(rec.name)}
+        <span class="name">${tn(rec.name)}</span>
+      </div>
+      <span class="gh-col" style="width:24px;flex-shrink:0;color:var(--muted);font-weight:700">${g}</span>
+      <div class="standings-col">${rec.played}</div>
+      <div class="standings-col">${labGoalDiff(rec) >= 0 ? "+" : ""}${labGoalDiff(rec)}</div>
+      <div class="standings-col">${labPoints(rec)}</div>
+    </div>`;
+  }).join("");
+  return `<div class="group-card">
+    <div class="group-head">
+      <span class="gh-name">${tr("thirds_race_short")}</span>
+      <span class="gh-col" style="width:24px"></span>
+      <span class="gh-col">${tr("mp")}</span><span class="gh-col">${tr("gd")}</span><span class="gh-col">${tr("pts")}</span>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+// ── LAB MODAL: contextual editor for one R32 matchup ──────────────────────────
+// Edits apply live (each keystroke recomputes the whole bracket) so the
+// user can see the downstream effect as they type - but "quit without
+// saving" still needs something to revert to, so a snapshot of every
+// override store is taken the moment the modal opens.
+let labModalSnapshot = null;
+function snapshotLabOverrides() {
+  return JSON.parse(JSON.stringify({
+    group: labGroupOverrides, r32: labR32Overrides, r32ScoredFor: labR32ScoredFor,
+    later: labLaterOverrides, laterScoredFor: labLaterScoredFor,
+  }));
+}
+function restoreLabOverrides(snap) {
+  labGroupOverrides = snap.group;
+  labR32Overrides = snap.r32;
+  labR32ScoredFor = snap.r32ScoredFor;
+  labLaterOverrides = snap.later;
+  labLaterScoredFor = snap.laterScoredFor;
+}
+function labOverridesChangedSinceSnapshot() {
+  return JSON.stringify(snapshotLabOverrides()) !== JSON.stringify(labModalSnapshot);
+}
+
+function openLabModal(slot) {
+  labOpenSlot = slot;
+  labOpenLaterNumber = null;
+  labModalSnapshot = snapshotLabOverrides();
+  document.getElementById("lab-modal-backdrop").style.display = "flex";
+  labComputeAndRender();
+}
+function openLabLaterModal(matchNumber) {
+  labOpenLaterNumber = matchNumber;
+  labOpenSlot = null;
+  labModalSnapshot = snapshotLabOverrides();
+  document.getElementById("lab-modal-backdrop").style.display = "flex";
+  labComputeAndRender();
+}
+function closeLabModal() {
+  labOpenSlot = null;
+  labOpenLaterNumber = null;
+  labModalSnapshot = null;
+  document.getElementById("lab-modal-backdrop").style.display = "none";
+}
+function requestCloseLabModal() {
+  if (!labModalSnapshot || !labOverridesChangedSinceSnapshot()) {
+    closeLabModal();
+    return;
+  }
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "flex";
+}
+document.getElementById("lab-modal-close").addEventListener("click", requestCloseLabModal);
+document.getElementById("lab-modal-done").addEventListener("click", closeLabModal);
+document.getElementById("lab-modal-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "lab-modal-backdrop") requestCloseLabModal();
+});
+document.getElementById("lab-quit-keep-editing").addEventListener("click", () => {
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "none";
+});
+document.getElementById("lab-quit-close").addEventListener("click", () => {
+  restoreLabOverrides(labModalSnapshot);
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "none";
+  closeLabModal();
+  labComputeAndRender();
+});
+document.getElementById("lab-quit-save-close").addEventListener("click", () => {
+  document.getElementById("lab-quit-confirm-backdrop").style.display = "none";
+  closeLabModal();
+});
+
+// The modal fully re-renders on every keystroke (live recompute can change
+// which two teams are even in this matchup), which would normally steal
+// focus/caret position out from under the user mid-type - this captures
+// the active input before the re-render and restores it after.
+function captureLabFocus(root) {
+  const el = document.activeElement;
+  if (!el || !root.contains(el) || el.tagName !== "INPUT") return null;
+  let selector;
+  if (el.dataset.r32Slot) {
+    selector = `input[data-r32-slot="${el.dataset.r32Slot}"][data-side="${el.dataset.side}"]`;
+  } else if (el.dataset.laterNumber) {
+    selector = `input[data-later-number="${el.dataset.laterNumber}"][data-side="${el.dataset.side}"]`;
+  } else if (el.dataset.home) {
+    selector = `input[data-home="${CSS.escape(el.dataset.home)}"][data-away="${CSS.escape(el.dataset.away)}"][data-side="${el.dataset.side}"]`;
+  } else {
+    return null;
+  }
+  return { selector, pos: el.selectionStart };
+}
+function restoreLabFocus(root, snap) {
+  if (!snap) return;
+  const el = root.querySelector(snap.selector);
+  if (!el) return;
+  el.focus();
+  try { el.setSelectionRange(snap.pos, snap.pos); } catch (e) {}
+}
+
+function renderLabModal(slot, bracket) {
+  const m = bracket.find(x => x.slot === slot);
+  if (!m) { closeLabModal(); return; }
+
+  const modalRoot = document.getElementById("lab-modal");
+  const focusSnap = captureLabFocus(modalRoot);
+
+  document.getElementById("lab-modal-title").textContent =
+    `${tr("match_label")} ${m.match_number} — ${tn(m.home.team) || tr("tbd")} vs ${tn(m.away.team) || tr("tbd")}`;
+
+  const prevTeams = labModalPrevTeams[slot];
+  const teamsChanged = prevTeams && (prevTeams.home !== m.home.team || prevTeams.away !== m.away.team);
+  labModalPrevTeams[slot] = { home: m.home.team, away: m.away.team };
+
+  const pickEl = document.getElementById("lab-modal-pick");
+  pickEl.innerHTML = renderLabMatchupPick(m);
+
+  const groups = [...new Set([m.home.group, m.away.group].filter(Boolean))];
+  // Always included, not just when one of these two teams is itself a
+  // 3rd-place qualifier - editing any group's scores can shift the
+  // cross-group 3rd-place ranking and bump a *different* group's 3rd-place
+  // team across the qualification line.
+  const thirdColumn = `<div class="lab-group-block">${renderLabThirdsTable(labLastStandings, labLastMovedTeams)}</div>`;
+  const body = document.getElementById("lab-modal-body");
+  body.innerHTML = `<div class="lab-modal-columns">${groups.map(g => renderLabGroupBlock(g)).join("")}${thirdColumn}</div>`;
+
+  wireLabFixtureInputs(body);
+  wireLabMatchupPick(pickEl, m);
+  restoreLabFocus(modalRoot, focusSnap);
+
+  if (teamsChanged) {
+    const sticky = document.querySelector(".lab-modal-sticky");
+    sticky.classList.remove("lab-flash");
+    void sticky.offsetWidth;
+    sticky.classList.add("lab-flash");
+  }
+}
+
+function renderLabGroupBlock(g) {
+  const table = renderLabGroupTable(g, labLastStandings[g] || [], labLastMovedTeams);
+
+  // Upcoming/live/edited games on top (the ones that still matter to edit),
+  // finished games below (reference only) - reverse of plain chronological
+  // order, which would bury the editable games under the played ones.
+  const byKickoff = (a, b) => new Date(a.kickoff) - new Date(b.kickoff);
+  const groupMatches = allMatches.filter(m => m.group === g);
+  const upcoming = groupMatches.filter(m => m.status !== "ft").sort(byKickoff);
+  const finished = groupMatches.filter(m => m.status === "ft").sort(byKickoff);
+  const fixtureRows = upcoming.concat(finished).map(renderLabFixtureRow).join("");
+
+  return `<div class="lab-group-block">
+    ${table}
+    ${fixtureRows}
+  </div>`;
+}
+
+function renderLabFixtureRow(m) {
+  if (m.status === "ft") {
+    return `<div class="lab-fixture-row completed">
+      <div class="lab-fixture-team">${flagImg(m.home)}<span class="name">${tn(m.home)}</span><span>${m.home_score}</span></div>
+      <div class="lab-fixture-team">${flagImg(m.away)}<span class="name">${tn(m.away)}</span><span>${m.away_score}</span></div>
+    </div>`;
+  }
+
+  const r = labResultFor(m);
+  const isLive = m.status === "live" || m.status === "ht";
+  const minHome = isLive ? m.home_score : 0;
+  const minAway = isLive ? m.away_score : 0;
+  const homeShown = r.mode === "predicted" ? "" : r.home_score;
+  const awayShown = r.mode === "predicted" ? "" : r.away_score;
+  const statusLabel = isLive ? `<span class="lab-live-dot"></span>${tr("live_now")}` : "";
+  const topRow = statusLabel ? `<div class="lab-fixture-top">${statusLabel}</div>` : "";
+
+  return `<div class="lab-fixture-row ${r.mode}">
+    ${topRow}
+    <div class="lab-fixture-team">
+      ${flagImg(m.home)}<span class="name">${tn(m.home)}</span>
+      <input type="number" class="lab-score-input" min="${minHome}" max="99" value="${homeShown}" placeholder="${minHome}"
+        data-home="${m.home}" data-away="${m.away}" data-side="home" data-min="${minHome}">
+    </div>
+    <div class="lab-fixture-team">
+      ${flagImg(m.away)}<span class="name">${tn(m.away)}</span>
+      <input type="number" class="lab-score-input" min="${minAway}" max="99" value="${awayShown}" placeholder="${minAway}"
+        data-home="${m.home}" data-away="${m.away}" data-side="away" data-min="${minAway}">
+    </div>
+  </div>`;
+}
+
+function wireLabFixtureInputs(container) {
+  container.querySelectorAll(".lab-score-input[data-home]").forEach(input => {
+    input.addEventListener("input", () => {
+      const min = parseInt(input.dataset.min, 10) || 0;
+      let val = parseInt(input.value, 10);
+      if (isNaN(val) || val < min) val = min;
+
+      const home = input.dataset.home, away = input.dataset.away;
+      const key = labMatchKey(home, away);
+      const m = allMatches.find(x => x.home === home && x.away === away);
+      const current = labResultFor(m);
+      // First edit on a still-"predicted" fixture must start from a real 0-0,
+      // not the hidden odds-favored placeholder score - otherwise typing "1"
+      // into just one side can silently inherit the other side's invisible
+      // favored number (e.g. away-favored 0-1 + typing home=1 -> shown 1-1).
+      // A live match is different: there's a real partial score to preserve.
+      const existing = labGroupOverrides[key] || (
+        current.mode === "live"
+          ? { home_score: current.home_score, away_score: current.away_score }
+          : { home_score: 0, away_score: 0 }
+      );
+      existing[`${input.dataset.side}_score`] = val;
+      labGroupOverrides[key] = existing;
+      labComputeAndRender();
+    });
+  });
+}
+
+function renderLabMatchupPick(m) {
+  if (!m.home.team || !m.away.team) return "";
+  const pick = labR32Overrides[m.slot];
+  const homeVal = pick ? pick.home_score : "";
+  const awayVal = pick ? pick.away_score : "";
+  const showTieBreak = pick && pick.home_score === pick.away_score && !pick.winner;
+
+  return `<div class="lab-matchup-pick">
+    <div class="lab-matchup-pick-title">${trPredictMatchup(tr("round_r32"))}</div>
+    <div class="lab-pick-row">
+      ${flagImg(m.home.team)}<span class="name">${tn(m.home.team)}</span>
+      <input type="number" class="lab-score-input" min="0" max="20" value="${homeVal}" placeholder="0"
+        data-r32-slot="${m.slot}" data-side="home">
+    </div>
+    <div class="lab-pick-row">
+      ${flagImg(m.away.team)}<span class="name">${tn(m.away.team)}</span>
+      <input type="number" class="lab-score-input" min="0" max="20" value="${awayVal}" placeholder="0"
+        data-r32-slot="${m.slot}" data-side="away">
+    </div>
+    ${showTieBreak ? `
+      <div class="lab-tie-note">${tr("tie_note")}</div>
+      <button type="button" class="lab-tie-btn" data-r32-winner-slot="${m.slot}" data-r32-winner-team="${m.home.team}">${tn(m.home.team)}</button>
+      <button type="button" class="lab-tie-btn" data-r32-winner-slot="${m.slot}" data-r32-winner-team="${m.away.team}">${tn(m.away.team)}</button>
+    ` : ""}
+  </div>`;
+}
+
+function wireLabMatchupPick(container, m) {
+  container.querySelectorAll("input[data-r32-slot]").forEach(input => {
+    input.addEventListener("input", () => {
+      const slot = input.dataset.r32Slot;
+      let val = parseInt(input.value, 10);
+      if (isNaN(val) || val < 0) val = 0;
+      const existing = labR32Overrides[slot] || { home_score: 0, away_score: 0 };
+      existing[`${input.dataset.side}_score`] = val;
+      delete existing.winner; // score changed - any earlier penalty-shootout pick is stale
+      if (existing.home_score !== existing.away_score) {
+        existing.winner = existing.home_score > existing.away_score ? m.home.team : m.away.team;
+      }
+      labR32Overrides[slot] = existing;
+      labR32ScoredFor[slot] = { home: m.home.team, away: m.away.team };
+      labComputeAndRender();
+    });
+  });
+  container.querySelectorAll("[data-r32-winner-slot]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      labR32Overrides[btn.dataset.r32WinnerSlot].winner = btn.dataset.r32WinnerTeam;
+      labComputeAndRender();
+    });
+  });
+}
+
+// ── LAB MODAL: R16-onward (simple - no groups/fixtures, just this match) ──────
+// Per explicit design: which winner meets which is already a fixed lookup,
+// not something that needs group context or drilling into feeder matches -
+// once R32 is scored, R16 (and onward) is just "pick a score for this game."
+function labRoundNameForNumber(num) {
+  if (LAB_R16_NUMBERS.includes(num)) return tr("round_r16_singular");
+  if (LAB_QF_NUMBERS.includes(num)) return tr("round_qf_singular");
+  if (LAB_SF_NUMBERS.includes(num)) return tr("round_sf_singular");
+  if (num === LAB_FINAL_NUMBER) return tr("round_final");
+  if (num === LAB_BRONZE_NUMBER) return tr("round_bronze_singular");
+  return tr("round_r32");
+}
+
+function renderLabLaterModal(num, laterRounds) {
+  const m = laterRounds.find(x => x.match_number === num);
+  if (!m) { closeLabModal(); return; }
+
+  const modalRoot = document.getElementById("lab-modal");
+  const focusSnap = captureLabFocus(modalRoot);
+
+  document.getElementById("lab-modal-title").textContent =
+    `${tr("match_label")} ${num} — ${tn(m.home?.team) || tr("tbd")} vs ${tn(m.away?.team) || tr("tbd")}`;
+
+  const prevTeams = labModalPrevTeams[num];
+  const teamsChanged = prevTeams && (prevTeams.home !== m.home?.team || prevTeams.away !== m.away?.team);
+  labModalPrevTeams[num] = { home: m.home?.team, away: m.away?.team };
+
+  const pickEl = document.getElementById("lab-modal-pick");
+  pickEl.innerHTML = renderLabLaterPick(m, num);
+  document.getElementById("lab-modal-body").innerHTML = "";
+
+  wireLabLaterPick(pickEl, m, num);
+  restoreLabFocus(modalRoot, focusSnap);
+
+  if (teamsChanged) {
+    const sticky = document.querySelector(".lab-modal-sticky");
+    sticky.classList.remove("lab-flash");
+    void sticky.offsetWidth;
+    sticky.classList.add("lab-flash");
+  }
+}
+
+function renderLabLaterPick(m, num) {
+  if (!m.home?.team || !m.away?.team) return "";
+  const pick = labLaterOverrides[num];
+  const homeVal = pick ? pick.home_score : "";
+  const awayVal = pick ? pick.away_score : "";
+  const showTieBreak = pick && pick.home_score === pick.away_score && !pick.winner;
+
+  return `<div class="lab-matchup-pick">
+    <div class="lab-matchup-pick-title">${trPredictMatchup(labRoundNameForNumber(num))}</div>
+    <div class="lab-pick-row">
+      ${flagImg(m.home.team)}<span class="name">${tn(m.home.team)}</span>
+      <input type="number" class="lab-score-input" min="0" max="20" value="${homeVal}" placeholder="0"
+        data-later-number="${num}" data-side="home">
+    </div>
+    <div class="lab-pick-row">
+      ${flagImg(m.away.team)}<span class="name">${tn(m.away.team)}</span>
+      <input type="number" class="lab-score-input" min="0" max="20" value="${awayVal}" placeholder="0"
+        data-later-number="${num}" data-side="away">
+    </div>
+    ${showTieBreak ? `
+      <div class="lab-tie-note">${tr("tie_note")}</div>
+      <button type="button" class="lab-tie-btn" data-later-winner-number="${num}" data-later-winner-team="${m.home.team}">${tn(m.home.team)}</button>
+      <button type="button" class="lab-tie-btn" data-later-winner-number="${num}" data-later-winner-team="${m.away.team}">${tn(m.away.team)}</button>
+    ` : ""}
+  </div>`;
+}
+
+function wireLabLaterPick(container, m, num) {
+  container.querySelectorAll("input[data-later-number]").forEach(input => {
+    input.addEventListener("input", () => {
+      let val = parseInt(input.value, 10);
+      if (isNaN(val) || val < 0) val = 0;
+      const existing = labLaterOverrides[num] || { home_score: 0, away_score: 0 };
+      existing[`${input.dataset.side}_score`] = val;
+      delete existing.winner; // score changed - any earlier penalty-shootout pick is stale
+      if (existing.home_score !== existing.away_score) {
+        existing.winner = existing.home_score > existing.away_score ? m.home.team : m.away.team;
+      }
+      labLaterOverrides[num] = existing;
+      labLaterScoredFor[num] = { home: m.home.team, away: m.away.team };
+      labComputeAndRender();
+    });
+  });
+  container.querySelectorAll("[data-later-winner-number]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      labLaterOverrides[parseInt(btn.dataset.laterWinnerNumber, 10)].winner = btn.dataset.laterWinnerTeam;
+      labComputeAndRender();
+    });
+  });
+}
+
+document.getElementById("lab-reset-btn").addEventListener("click", () => {
+  labGroupOverrides = {};
+  labR32Overrides = {};
+  labR32ScoredFor = {};
+  labLaterOverrides = {};
+  labLaterScoredFor = {};
+  labNotices = [];
+  labComputeAndRender();
+});
+
+function initLab() {
+  labFixtureProbs = {};
+  (cachedState.fixture_probs || []).forEach(f => {
+    labFixtureProbs[labMatchKey(f.home, f.away)] = f;
+  });
+  labEloRatings = cachedState.elo_ratings || {};
+  labRealOdds = cachedState.real_odds || {};
+  labComputeAndRender();
+  updateFuturesBanner();
+}
+
+// ── LAST UPDATED ──────────────────────────────────────────────────────────────
+function renderLastUpdated(ts) {
+  const el = document.getElementById("last-updated");
+  if (!ts) { el.textContent = ""; return; }
+  const diff = Math.floor((Date.now() / 1000) - ts);
+  if (diff < 60) el.textContent = tr("updated_just_now");
+  else if (diff < 3600) el.textContent = LANG === "es" ? `Actualizado hace ${Math.floor(diff/60)}m` : `Updated ${Math.floor(diff/60)}m ago`;
+  else el.textContent = LANG === "es" ? `Actualizado hace ${Math.floor(diff/3600)}h` : `Updated ${Math.floor(diff/3600)}h ago`;
+}
+
+// ── POLLING ───────────────────────────────────────────────────────────────────
+// Two independent loops: cachedState only changes when a match finishes
+// (cron-driven, can lag), so it's polled slowly. liveMatches comes straight
+// from ESPN on every call and drives the live banner, the standings
+// overlay, and the ticking clock — polled fast since that's the whole
+// point of bypassing the cron for it.
+// fetchState and fetchLive resolve independently — if either one rendered
+// on its own before the other ever loaded, the standings would render once
+// without the live overlay and once with it moments later, which the
+// move-arrow logic would misread as a real position change. So neither
+// renders until both have loaded at least once; after that, either one
+// triggers a normal re-render on its own.
+let stateLoadedOnce = false;
+let liveLoadedOnce = false;
+
+// /api/live also returns matches that finished recently (status "ft"), so
+// the banner doesn't vanish the instant the final whistle blows. But those
+// must NOT feed the standings overlay — once the cron's next tick picks a
+// finished match up into cachedState, overlaying it again here would
+// double-count it. Only genuinely in-progress matches go into the overlay;
+// the banner prefers in-progress, falling back to recently-finished ones
+// only when nothing is currently live.
+function inProgressMatches(matches) {
+  return matches.filter(m => m.status === "live" || m.status === "ht");
+}
+
+function renderAll() {
+  if (!stateLoadedOnce || !liveLoadedOnce) return;
+  const active = inProgressMatches(liveMatches);
+  renderTodayStrip(allMatches);
+  renderBracket(cachedState.bracket);
+  renderStandings(applyLiveOverlay(cachedState.standings, active), active);
+  renderThirds(cachedState.thirds_race);
+  renderPredictedBracket(cachedState.predicted_bracket);
+  renderPredictedStandings(cachedState.predicted_standings);
+  renderPredictedThirds(cachedState.predicted_thirds_race);
+  renderLastUpdated(cachedState.last_updated);
+  updateFuturesBanner();
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("tab-actual").style.display = btn.dataset.tab === "actual" ? "block" : "none";
+    document.getElementById("tab-predicted").style.display = btn.dataset.tab === "predicted" ? "block" : "none";
+    document.getElementById("tab-lab").style.display = btn.dataset.tab === "lab" ? "block" : "none";
+    if (btn.dataset.tab === "lab") initLab();
+  });
+});
+
+async function fetchState() {
+  try {
+    const res = await fetch("/api/state");
+    if (!res.ok) return;
+    cachedState = await res.json();
+    stateLoadedOnce = true;
+    renderAll();
+  } catch (e) {
+    console.error("fetchState error:", e);
+  }
+}
+
+// Adaptive interval, not a fixed setInterval: poll quickly only while a
+// match is actually in progress; back off hard the rest of the time. A
+// fixed fast interval is what burned through Netlify's free-tier usage
+// limits and got the site paused — most of the tournament has nothing
+// live at all, and that's most of the day.
+const LIVE_POLL_ACTIVE_MS = 20000;
+const LIVE_POLL_IDLE_MS = 90000;
+let liveFetchTimer = null;
+
+async function fetchLive() {
+  try {
+    const res = await fetch("/api/live");
+    if (res.ok) {
+      const data = await res.json();
+      liveMatches = data.live_matches || [];
+      allMatches = data.all_matches || [];
+
+      const now = Date.now();
+      for (const m of liveMatches) {
+        liveTickers[matchKey(m)] = {
+          baseMinute: m.status === "live" ? parseMinute(m.minute) : null,
+          hasStoppage: /\+/.test(m.minute || ""),
+          rawLabel: m.minute,
+          fetchedAtMs: now,
+          status: m.status,
+        };
+      }
+      for (const key of Object.keys(liveTickers)) {
+        if (!liveMatches.some(m => matchKey(m) === key)) delete liveTickers[key];
+      }
+      liveLoadedOnce = true;
+      renderAll();
+    }
+  } catch (e) {
+    console.error("fetchLive error:", e);
+  } finally {
+    clearTimeout(liveFetchTimer);
+    const delay = inProgressMatches(liveMatches).length > 0 ? LIVE_POLL_ACTIVE_MS : LIVE_POLL_IDLE_MS;
+    liveFetchTimer = setTimeout(fetchLive, delay);
+  }
+}
+
+fetchState();
+fetchLive();
+fetchVisitorGeo();
+setInterval(fetchState, 60000);
+setInterval(tickTodayStatuses, 1000); // local clock tick, no fetch, no DOM rebuild
+setInterval(() => renderLastUpdated(cachedState.last_updated), 30000);
+
+// ── COOKIE CONSENT ────────────────────────────────────────────────────────────
+const COOKIE_CONSENT_KEY = "cookieConsent";
+if (!localStorage.getItem(COOKIE_CONSENT_KEY)) {
+  document.getElementById("cookie-banner").style.display = "flex";
+}
+document.getElementById("cookie-accept-btn").addEventListener("click", () => {
+  localStorage.setItem(COOKIE_CONSENT_KEY, "accepted");
+  document.getElementById("cookie-banner").style.display = "none";
+});
