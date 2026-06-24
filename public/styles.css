@@ -18,6 +18,21 @@ a { color: var(--blue); text-decoration: none; }
 header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .site-logo { height: 22px; width: auto; display: block; }
 #last-updated { font-size: 12px; color: var(--muted); }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.lang-switch {
+  font-size: 12px; font-weight: 700; color: var(--muted); text-decoration: none;
+  border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px;
+}
+.lang-switch:hover { background: #f4f4f6; color: #15151a; }
+.refresh-btn {
+  font-size: 14px; line-height: 1; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px; background: #fff;
+  padding: 3px 7px; cursor: pointer;
+}
+.refresh-btn:hover { background: #f4f4f6; color: #15151a; }
+.refresh-btn:disabled { cursor: default; opacity: 0.6; }
+.refresh-btn.spinning { animation: refresh-spin 0.6s linear infinite; }
+@keyframes refresh-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* Page headline — descriptive, plain-text mention of the tournament (not a
    logo/crest treatment), so the page actually says what it's tracking. */
@@ -26,6 +41,16 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 /* Sections */
 .section { padding: 20px 8px 8px; }
 .section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+/* The first section right under the tab nav doesn't need the full 20px -
+   that gap was designed for section-to-section spacing, not tab-to-content.
+   The Lab tab's first .section isn't actually :first-child - #lab-notifications
+   sits before it in the DOM - so it needs its own selector too. */
+.tab-panel > .section:first-child,
+.lab-notifications + .section { padding-top: 10px; }
+/* Empty on most loads (no active notices) - margin-bottom on an empty box
+   still pushes the next element down, which was adding dead space above
+   the bracket on every tab that uses it (currently just Build Your Bracket). */
+.lab-notifications:empty { margin-bottom: 0; }
 
 /* Tabs — styled like real file/browser tabs: inactive tabs sit on a grey
    background behind the nav's bottom rule, the active tab is white and
@@ -75,6 +100,7 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
   flex: 0 0 auto;
 }
 .today-card.live { border: 2px solid var(--red); }
+.today-card.finished { background: #f4f4f6; }
 .today-card-top { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
 .today-match-num { font-size: 11px; font-weight: 600; color: var(--muted); }
 .today-group { font-size: 14px; font-weight: 800; flex: 1; }
@@ -95,9 +121,9 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .bracket-tree {
   display: grid;
   grid-template-columns: 230px 160px 160px 150px 150px;
-  grid-template-rows: 22px repeat(16, minmax(92px, auto));
-  grid-auto-rows: minmax(92px, auto);
-  gap: 8px 16px;
+  grid-template-rows: 22px repeat(16, auto);
+  grid-auto-rows: auto;
+  gap: 2px 16px;
   min-width: 920px;
 }
 .round-title { grid-row: 1; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; text-align: center; align-self: center; }
@@ -179,29 +205,29 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
    (ported to JS, see the LAB_* section of the script), just fed
    user-edited and odds-predicted results instead of real ones. */
 .lab-section-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
-.lab-info-bubble {
+.info-bubble {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   background: #eef2ff; color: #3b4a8a; border: 1px solid #dbe3fb;
   border-radius: 10px; padding: 8px 14px; font-size: 12px; font-weight: 600;
   width: 100%; text-align: center;
 }
-.lab-info-bubble .icon { font-size: 13px; }
+.info-bubble .icon { font-size: 13px; }
+/* Only when the bubble sits directly in a .section (Live Standings / Odds-
+   Based Projection) - inside .lab-section-head's own flex gap already
+   spaces it from what follows, adding this there would double up. */
+.section > .info-bubble:first-child { margin-bottom: 12px; }
 .lab-reset-btn {
   background: #fff; color: #15151a; border: 1px solid var(--border); border-radius: 6px;
   font-size: 11px; font-weight: 700; padding: 5px 10px; cursor: pointer; flex-shrink: 0;
   align-self: flex-end;
 }
 .lab-reset-btn:hover { background: #f4f4f6; }
-
-.lab-tree {
-  /* Fixed (not 1fr) so columns size to their content instead of stretching
-     to fill leftover width on wide screens - the cards were ending up much
-     wider than the flag+name+seed inside them actually needed. */
-  grid-template-columns: repeat(5, 190px);
-  grid-template-rows: 30px repeat(16, minmax(74px, auto));
-  grid-auto-rows: minmax(74px, auto);
-  gap: 8px 4px;
-  min-width: 0;
+/* Replaces the info bubble once at least one edit exists - same box shape
+   as .info-bubble (full width, centered) so it visually "takes over" that
+   slot instead of looking like a second, smaller control underneath it. */
+.lab-reset-btn.standalone {
+  width: 100%; align-self: stretch; padding: 8px 14px; font-size: 12px;
+  border-radius: 10px;
 }
 .lab-card { cursor: pointer; }
 .lab-card:hover { border-color: #b4b8c2; }
