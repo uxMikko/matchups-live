@@ -2590,12 +2590,33 @@ function refreshNow() {
 }
 document.getElementById("refresh-btn").addEventListener("click", refreshNow);
 
+// ── GOOGLE ANALYTICS ─────────────────────────────────────────────────────────
+// Loaded only after explicit cookie consent (see below) - never injected
+// unconditionally, so no tracking script runs before the visitor has
+// actually agreed to it.
+const GA_MEASUREMENT_ID = "G-BJT7WH328K";
+function loadGoogleAnalytics() {
+  if (window.gaLoaded) return;
+  window.gaLoaded = true;
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
+  document.head.appendChild(script);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer.push(arguments); };
+  window.gtag("js", new Date());
+  window.gtag("config", GA_MEASUREMENT_ID);
+}
+
 // ── COOKIE CONSENT ────────────────────────────────────────────────────────────
 const COOKIE_CONSENT_KEY = "cookieConsent";
-if (!localStorage.getItem(COOKIE_CONSENT_KEY)) {
+if (localStorage.getItem(COOKIE_CONSENT_KEY) === "accepted") {
+  loadGoogleAnalytics();
+} else {
   document.getElementById("cookie-banner").style.display = "flex";
 }
 document.getElementById("cookie-accept-btn").addEventListener("click", () => {
   localStorage.setItem(COOKIE_CONSENT_KEY, "accepted");
   document.getElementById("cookie-banner").style.display = "none";
+  loadGoogleAnalytics();
 });
