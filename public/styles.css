@@ -27,8 +27,11 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .section { padding: 20px 8px 8px; }
 .section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
 /* The first section right under the tab nav doesn't need the full 20px -
-   that gap was designed for section-to-section spacing, not tab-to-content. */
-.tab-panel > .section:first-child { padding-top: 10px; }
+   that gap was designed for section-to-section spacing, not tab-to-content.
+   The Lab tab's first .section isn't actually :first-child - #lab-notifications
+   sits before it in the DOM - so it needs its own selector too. */
+.tab-panel > .section:first-child,
+.lab-notifications + .section { padding-top: 10px; }
 /* Empty on most loads (no active notices) - margin-bottom on an empty box
    still pushes the next element down, which was adding dead space above
    the bracket on every tab that uses it (currently just Build Your Bracket). */
