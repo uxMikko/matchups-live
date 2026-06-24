@@ -29,9 +29,6 @@ function flagImg(team) {
 const LANG = (typeof window !== "undefined" && window.LANG) || "en";
 const I18N = {
   en: {
-    odds_badge: "Odds", bet_at: "Bet at",
-    bookie_home: "Home", bookie_draw: "Draw", bookie_away: "Away",
-    odds_unavailable: "Odds for this match aren't available right now.",
     kicking_off: "Kicking off", countdown_in: "in",
     finished: "Finished", group_label: "Group", tbd: "TBD",
     round_r32: "Round of 32", round_r16: "Round of 16", round_qf: "Quarterfinals",
@@ -45,9 +42,6 @@ const I18N = {
     tie_note: "Tied — who wins on penalties?",
   },
   es: {
-    odds_badge: "Cuotas", bet_at: "Apostar en",
-    bookie_home: "Local", bookie_draw: "Empate", bookie_away: "Visitante",
-    odds_unavailable: "Las cuotas de este partido no están disponibles por ahora.",
     kicking_off: "Comienza ya", countdown_in: "en",
     finished: "Finalizado", group_label: "Grupo", tbd: "Por definir",
     round_r32: "Dieciseisavos", round_r16: "Octavos", round_qf: "Cuartos",
@@ -118,154 +112,6 @@ let cachedState = {
 let liveMatches = [];
 let allMatches = []; // every group-stage match (any status) — backs the today's-games strip
 const liveTickers = {}; // matchKey -> {baseMinute, fetchedAtMs, status, label}
-
-// ── ODDS / BETTING CONTENT GATING ───────────────────────────────────────────
-// Affiliate odds content is opt-IN by country, not opt-out: empty until
-// explicitly populated once real affiliate-program market clearance is
-// known, so a visitor from an unrecognized/unchecked country never sees it
-// by accident. Geo comes from Netlify's own edge geolocation (see
-// netlify/functions/geo.js) - fetched once per page load, not per card.
-const ODDS_ALLOWED_COUNTRIES = [];
-let visitorCountry = null;
-let visitorCountryLoaded = false;
-async function fetchVisitorGeo() {
-  try {
-    const res = await fetch("/api/geo");
-    const data = await res.json();
-    visitorCountry = data.country || null;
-  } catch (e) {
-    visitorCountry = null;
-  } finally {
-    visitorCountryLoaded = true;
-    renderAll();
-  }
-}
-function oddsGeoAllowed() {
-  return ODDS_ALLOWED_COUNTRIES.includes(visitorCountry);
-}
-
-// Separate gate from geo, and deliberately not combined into one check:
-// oddsGeoAllowed() controls whether a neutral "Odds" badge (no figures,
-// no bookmaker names) appears at all; this controls what happens when
-// it's clicked - confirmed once per browser (localStorage) and persists,
-// so actual odds/bookmaker content only ever renders after this is true.
-const BETTING_AGE_KEY = "bettingAgeConfirmed";
-function bettingAgeConfirmed() {
-  return localStorage.getItem(BETTING_AGE_KEY) === "yes";
-}
-
-// bot/odds_api.py's bookmaker_odds is keyed by its own home/away
-// orientation (whichever side The Odds API called home) - re-orient to
-// match whatever home/away this specific call site is using before
-// handing it back, so callers never have to think about that.
-function realOddsFor(home, away) {
-  const entry = (cachedState.real_odds || {})[[home, away].sort().join("|")];
-  const bm = entry?.bookmaker_odds;
-  if (!bm || Object.keys(bm).length === 0) return null;
-  const flip = entry.home !== home;
-  const reorient = o => !o ? null : flip ? { home: o.away, draw: o.draw, away: o.home } : o;
-  return { unibet: reorient(bm.unibet), betsson: reorient(bm.betsson) };
-}
-function hasRealOdds(home, away) {
-  return !!realOddsFor(home, away);
-}
-
-// Pre-confirmation, this is the only "betting content" any visitor sees -
-// a plain text label, no odds figures, no bookmaker names - clicking it is
-// what triggers the age gate. Returns "" (renders nothing) unless the
-// visitor's country is on the allow-list AND real odds actually exist for
-// this exact matchup.
-function oddsBadgeHtml(home, away) {
-  if (!home || !away || !oddsGeoAllowed() || !hasRealOdds(home, away)) return "";
-  return `<button type="button" class="odds-badge" data-home="${home}" data-away="${away}">${tr("odds_badge")}</button>`;
-}
-function wireOddsBadges(container) {
-  container.querySelectorAll(".odds-badge").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation(); // cards this sits inside may have their own click handler
-      openOddsModal(btn.dataset.home, btn.dataset.away);
-    });
-  });
-}
-
-// Generic "do this once 18+ is confirmed" gate - openOddsModal and the
-// futures-bet banner buttons both funnel through this rather than each
-// keeping their own pending-action state.
-let pendingAgeGateAction = null;
-function requireAgeGate(action) {
-  if (!bettingAgeConfirmed()) {
-    pendingAgeGateAction = action;
-    document.getElementById("age-gate-backdrop").style.display = "flex";
-    return;
-  }
-  action();
-}
-function openOddsModal(home, away) {
-  requireAgeGate(() => renderOddsModal(home, away));
-}
-function bookieOddsRow(name, href, o) {
-  return `<div class="bookie-row">
-    <div class="bookie-row-top">
-      <span class="bookie-name">${name}</span>
-      <a class="bookie-link" href="${href}" target="_blank" rel="noopener noreferrer sponsored">${tr("bet_at")} ${name}</a>
-    </div>
-    <div class="bookie-odds-cells">
-      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_home")}</span><span class="bookie-odds-value">${o.home.toFixed(2)}</span></div>
-      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_draw")}</span><span class="bookie-odds-value">${o.draw.toFixed(2)}</span></div>
-      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_away")}</span><span class="bookie-odds-value">${o.away.toFixed(2)}</span></div>
-    </div>
-  </div>`;
-}
-function renderOddsModal(home, away) {
-  const odds = realOddsFor(home, away) || {};
-  document.getElementById("odds-modal-title").textContent = `${tn(home)} vs ${tn(away)}`;
-  const rows = [
-    odds.unibet ? bookieOddsRow("Unibet", "https://www.unibet.com", odds.unibet) : "",
-    odds.betsson ? bookieOddsRow("Betsson", "https://www.betsson.com", odds.betsson) : "",
-  ].filter(Boolean);
-  document.getElementById("odds-modal-body").innerHTML = rows.join("")
-    || `<p class="odds-modal-empty">${tr("odds_unavailable")}</p>`;
-  document.getElementById("odds-modal-backdrop").style.display = "flex";
-}
-document.getElementById("age-gate-confirm").addEventListener("click", () => {
-  localStorage.setItem(BETTING_AGE_KEY, "yes");
-  document.getElementById("age-gate-backdrop").style.display = "none";
-  const action = pendingAgeGateAction;
-  pendingAgeGateAction = null;
-  if (action) action();
-});
-function closeAgeGate() {
-  document.getElementById("age-gate-backdrop").style.display = "none";
-  pendingAgeGateAction = null;
-}
-document.getElementById("age-gate-cancel").addEventListener("click", closeAgeGate);
-document.getElementById("age-gate-backdrop").addEventListener("click", (e) => {
-  if (e.target.id === "age-gate-backdrop") closeAgeGate();
-});
-document.getElementById("odds-modal-close").addEventListener("click", () => {
-  document.getElementById("odds-modal-backdrop").style.display = "none";
-});
-document.getElementById("odds-modal-backdrop").addEventListener("click", (e) => {
-  if (e.target.id === "odds-modal-backdrop") document.getElementById("odds-modal-backdrop").style.display = "none";
-});
-
-// Root-domain-only placeholders, same reasoning as the per-match bookie
-// links above: no verified, stable deep link to either operator's actual
-// World Cup outright-winner market exists yet - swap these for real
-// tracking links once the affiliate accounts are approved.
-const FUTURES_BOOKIE_LINKS = {
-  unibet: "https://www.unibet.com",
-  betsson: "https://www.betsson.com",
-};
-function updateFuturesBanner() {
-  document.getElementById("futures-bet-banner").style.display = oddsGeoAllowed() ? "flex" : "none";
-}
-document.querySelectorAll(".futures-bet-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const href = FUTURES_BOOKIE_LINKS[btn.dataset.bookie];
-    requireAgeGate(() => window.open(href, "_blank", "noopener,noreferrer"));
-  });
-});
 
 function matchKey(m) { return `${m.home}_${m.away}`; }
 
@@ -450,10 +296,8 @@ function renderTodayStrip(allMatches) {
         <span class="today-team-name">${tn(m.away)}</span>
         ${scoreSpan(m.away_score)}
       </div>
-      ${oddsBadgeHtml(m.home, m.away) ? `<div class="today-card-odds">${oddsBadgeHtml(m.home, m.away)}</div>` : ""}
     </div>`;
   }).join("");
-  wireOddsBadges(container);
 
   // Auto-scroll so the live game (or, if none, the next upcoming one) sits
   // at the left edge of the visible strip - finished games scroll off to
@@ -567,14 +411,12 @@ function resultTeamRow(t, score, isWinner) {
   </div>`;
 }
 function resultCard(num, home, away, { homeScore = null, awayScore = null, homeIsWinner, awayIsWinner, extraClass = "", style = "", attrs = "" } = {}) {
-  const badge = home?.team && away?.team ? oddsBadgeHtml(home.team, away.team) : "";
   return `<div class="tie-card result-card${extraClass ? " " + extraClass : ""}" style="${style}" ${attrs}>
     <span class="result-num">${num}</span>
     <div class="result-rows">
       ${resultTeamRow(home, homeScore, homeIsWinner)}
       ${resultTeamRow(away, awayScore, awayIsWinner)}
     </div>
-    ${badge ? `<div class="result-card-odds">${badge}</div>` : ""}
   </div>`;
 }
 
@@ -690,7 +532,6 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
         <span class="match-num">${m.match_number ?? i + 73}</span>
         <span class="match-date">${formatKickoff(m.kickoff)}</span>
         ${isUpdated ? `<span class="updating-badge">🔴 ${tr("updating_badge")}</span>` : ''}
-        ${m.home?.team && m.away?.team ? oddsBadgeHtml(m.home.team, m.away.team) : ""}
       </div>
       ${teamRow(m.home, showProb)}
       ${teamRow(m.away, showProb)}
@@ -738,7 +579,6 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
   }
 
   grid.innerHTML = html;
-  wireOddsBadges(grid);
 }
 
 function renderBracket(bracket) {
@@ -1983,7 +1823,6 @@ function renderLabBracket(bracket, laterRounds) {
   grid.querySelectorAll(".lab-card[data-slot]").forEach(card => {
     card.addEventListener("click", () => openLabModal(card.dataset.slot));
   });
-  wireOddsBadges(grid);
   grid.querySelectorAll(".lab-card[data-number]").forEach(card => {
     card.addEventListener("click", () => openLabLaterModal(parseInt(card.dataset.number, 10)));
   });
@@ -2439,7 +2278,6 @@ function initLab() {
   labEloRatings = cachedState.elo_ratings || {};
   labRealOdds = cachedState.real_odds || {};
   labComputeAndRender();
-  updateFuturesBanner();
 }
 
 // ── LAST UPDATED ──────────────────────────────────────────────────────────────
@@ -2489,7 +2327,6 @@ function renderAll() {
   renderPredictedStandings(cachedState.predicted_standings);
   renderPredictedThirds(cachedState.predicted_thirds_race);
   renderLastUpdated(cachedState.last_updated);
-  updateFuturesBanner();
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
@@ -2560,7 +2397,6 @@ async function fetchLive() {
 
 fetchState();
 fetchLive();
-fetchVisitorGeo();
 setInterval(fetchState, 60000);
 setInterval(tickTodayStatuses, 1000); // local clock tick, no fetch, no DOM rebuild
 setInterval(() => renderLastUpdated(cachedState.last_updated), 30000);
