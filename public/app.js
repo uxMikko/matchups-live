@@ -352,9 +352,12 @@ function _renderMatchupInfoBody() {
 
   // ── Match state: finished score / live score / kickoff date ───────────────
   if (isFinished && homeScore != null && awayScore != null) {
+    const penLine = liveM?.decided_by_pen && liveM?.pen_home != null && liveM?.pen_away != null
+      ? `<div class="mim-score-meta">AET · PEN ${liveM.pen_home}–${liveM.pen_away}</div>`
+      : `<div class="mim-score-meta">Final</div>`;
     html += `<div class="mim-score-display">
       <div class="mim-score-nums">${homeScore} – ${awayScore}</div>
-      <div class="mim-score-meta">Final</div>
+      ${penLine}
     </div>`;
   } else if (isLive && homeScore != null && awayScore != null) {
     const minLabel = liveM?.minute ? `${liveM.minute}'` : (matchStatus === "ht" ? "HT" : "Live");
@@ -801,7 +804,7 @@ function bracketTieCard(num, home, away, {
   const classes = ["tie-card", hasTbd ? "tbd-card" : "", extraClass, isUpdated ? "just-updated" : ""]
     .filter(Boolean).join(" ");
 
-  const row = (t, feederNum, score, isLoser) => {
+  const row = (t, feederNum, score, isLoser, penScore = null) => {
     const seedStr = feederNum != null ? `${feederPrefix}${feederNum}` : (t?.seed ?? "");
     if (!t?.team) {
       return `<div class="tbd-team">
@@ -834,7 +837,8 @@ function bracketTieCard(num, home, away, {
     const { pct: probPct, cls: pillCls } = advanceProbPill(prob);
     let right = "";
     if (score != null) {
-      right = `<span class="tie-score">${score}</span>`;
+      const penStr = penScore != null ? `<span class="pen-score">(${penScore})</span>` : "";
+      right = `<span class="tie-score">${score}${penStr}</span>`;
     } else if (showProb && prob > 0 && probPct < 100) {
       right = `<span class="team-prob-pill ${pillCls}">${probPct}%</span>`;
     }
@@ -847,9 +851,6 @@ function bracketTieCard(num, home, away, {
   };
 
   const badge = showOddsBadge && home?.team && away?.team ? oddsBadgeHtml(home.team, away.team) : "";
-  const penNote = decidedByPen
-    ? `<div class="tie-pen-note">AET${penHome != null && penAway != null ? ` · PEN ${penHome}–${penAway}` : ""}</div>`
-    : "";
 
   return `<div class="${classes}" data-match-num="${num}" style="${style}" ${attrs}>
     <div class="tie-top">
@@ -858,9 +859,8 @@ function bracketTieCard(num, home, away, {
       ${isUpdated ? `<span class="updating-badge">🔴 ${tr("updating_badge")}</span>` : ""}
       ${badge}
     </div>
-    ${row(home, homeFeeder, homeScore, homeIsLoser)}
-    ${row(away, awayFeeder, awayScore, awayIsLoser)}
-    ${penNote}
+    ${row(home, homeFeeder, homeScore, homeIsLoser, decidedByPen ? penHome : null)}
+    ${row(away, awayFeeder, awayScore, awayIsLoser, decidedByPen ? penAway : null)}
   </div>`;
 }
 
@@ -877,7 +877,7 @@ function bracketTieCard(num, home, away, {
 // isn't): true draws the green winner badge, false leaves the slot blank,
 // undefined (R32, or any row with no winner concept) falls back to the
 // seed-code display.
-function resultTeamRow(t, score, isWinner, rightLabel = null, prob = null) {
+function resultTeamRow(t, score, isWinner, rightLabel = null, prob = null, penScore = null) {
   if (!t || !t.team) {
     return `<div class="result-team">
       <span class="name" style="color:#9aa0ad">${t?.label || tr("tbd")}</span>
@@ -886,7 +886,8 @@ function resultTeamRow(t, score, isWinner, rightLabel = null, prob = null) {
   }
   let right;
   if (score != null) {
-    right = `<span class="result-right scored">${score}</span>`;
+    const penStr = penScore != null ? `<span class="pen-score">(${penScore})</span>` : "";
+    right = `<span class="result-right scored">${score}${penStr}</span>`;
   } else if (isWinner === true) {
     right = `<span class="winner-badge">W</span>`;
   } else if (isWinner === false) {
@@ -906,16 +907,12 @@ function resultTeamRow(t, score, isWinner, rightLabel = null, prob = null) {
 }
 function resultCard(num, home, away, { homeScore = null, awayScore = null, homeIsWinner, awayIsWinner, extraClass = "", style = "", attrs = "", homeLabel = null, awayLabel = null, homeProb = null, awayProb = null, showOddsBadge = true, decidedByPen = false, penHome = null, penAway = null } = {}) {
   const badge = showOddsBadge && home?.team && away?.team ? oddsBadgeHtml(home.team, away.team) : "";
-  const penNote = decidedByPen
-    ? `<div class="tie-pen-note">AET${penHome != null && penAway != null ? ` · PEN ${penHome}–${penAway}` : ""}</div>`
-    : "";
   return `<div class="tie-card result-card${extraClass ? " " + extraClass : ""}" style="${style}" ${attrs}>
     <span class="result-num">${num}</span>
     <div class="result-rows">
-      ${resultTeamRow(home, homeScore, homeIsWinner, homeLabel, homeProb)}
-      ${resultTeamRow(away, awayScore, awayIsWinner, awayLabel, awayProb)}
+      ${resultTeamRow(home, homeScore, homeIsWinner, homeLabel, homeProb, decidedByPen ? penHome : null)}
+      ${resultTeamRow(away, awayScore, awayIsWinner, awayLabel, awayProb, decidedByPen ? penAway : null)}
     </div>
-    ${penNote}
     ${badge ? `<div class="result-card-odds">${badge}</div>` : ""}
   </div>`;
 }
@@ -1011,7 +1008,7 @@ function drawBracketConnectors(_gridId) { /* connectors removed */ }
 // actual tab's probability-pill layout - on by default exactly when showProb
 // is off, since today that's the same tab, but kept as its own flag since
 // "no probabilities" and "seed/score layout" are independent decisions.
-function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, showProb = true, resultStyle = !showProb, showOddsElo = false } = {}) {
+function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, showProb = true, resultStyle = !showProb, showOddsElo = false, requireConfirmed = true } = {}) {
   const grid = document.getElementById(gridId);
   const spinner = document.getElementById(spinnerId);
   if (!bracket || bracket.length === 0) return;
@@ -1079,9 +1076,10 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
       const slotHW = slotLive?.winner ? (slotLive.winner === m.home?.team ? true : false) : undefined;
       const slotAW = slotLive?.winner ? (slotLive.winner === m.away?.team ? true : false) : undefined;
       const slotConfirmed = confirmedWinners.has(m.home.team) && confirmedWinners.has(m.away.team);
-      const slotProb = matchProb(m, { requireBothConfirmed: true });
-      if (resultStyle) return resultCard(num, m.home, m.away, { extraClass: "later-round", style, attrs: `data-match-num="${num}"`, homeProb: slotProb.h, awayProb: slotProb.a, homeIsWinner: slotHW, awayIsWinner: slotAW, homeScore: slotLive?.home_score ?? null, awayScore: slotLive?.away_score ?? null, showOddsBadge: slotConfirmed, decidedByPen: slotLive?.decided_by_pen ?? false, penHome: slotLive?.pen_home ?? null, penAway: slotLive?.pen_away ?? null });
-      return bracketTieCard(num, m.home, m.away, { style, extraClass: "later-round", showProb, homeIsLoser: slotAW === true, awayIsLoser: slotHW === true, decidedByPen: slotLive?.decided_by_pen ?? false, penHome: slotLive?.pen_home ?? null, penAway: slotLive?.pen_away ?? null });
+      const slotProb = matchProb(m, { requireBothConfirmed: requireConfirmed });
+      const slotDone = slotLive?.status === "ft";
+      if (resultStyle) return resultCard(num, m.home, m.away, { extraClass: `later-round${slotDone ? " finished" : ""}`, style, attrs: `data-match-num="${num}"`, homeProb: slotProb.h, awayProb: slotProb.a, homeIsWinner: slotHW, awayIsWinner: slotAW, homeScore: slotLive?.home_score ?? null, awayScore: slotLive?.away_score ?? null, showOddsBadge: slotConfirmed, decidedByPen: slotLive?.decided_by_pen ?? false, penHome: slotLive?.pen_home ?? null, penAway: slotLive?.pen_away ?? null });
+      return bracketTieCard(num, m.home, m.away, { style, extraClass: `later-round${slotDone ? " finished" : ""}`, showProb, homeIsLoser: slotAW === true, awayIsLoser: slotHW === true, decidedByPen: slotLive?.decided_by_pen ?? false, penHome: slotLive?.pen_home ?? null, penAway: slotLive?.pen_away ?? null });
     }
     return tbdResultCard(num, style);
   };
@@ -1096,9 +1094,10 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
       const onlyHW = onlyLive?.winner ? (onlyLive.winner === m.home?.team ? true : false) : undefined;
       const onlyAW = onlyLive?.winner ? (onlyLive.winner === m.away?.team ? true : false) : undefined;
       const onlyConfirmed = confirmedWinners.has(m.home.team) && confirmedWinners.has(m.away.team);
-      const onlyProb = matchProb(m, { requireBothConfirmed: true });
-      if (resultStyle) return resultCard(num, m.home, m.away, { extraClass: "later-round", attrs: `data-match-num="${num}"`, homeProb: onlyProb.h, awayProb: onlyProb.a, homeIsWinner: onlyHW, awayIsWinner: onlyAW, homeScore: onlyLive?.home_score ?? null, awayScore: onlyLive?.away_score ?? null, showOddsBadge: onlyConfirmed, decidedByPen: onlyLive?.decided_by_pen ?? false, penHome: onlyLive?.pen_home ?? null, penAway: onlyLive?.pen_away ?? null });
-      return bracketTieCard(num, m.home, m.away, { extraClass: "later-round", showProb, homeIsLoser: onlyAW === true, awayIsLoser: onlyHW === true, decidedByPen: onlyLive?.decided_by_pen ?? false, penHome: onlyLive?.pen_home ?? null, penAway: onlyLive?.pen_away ?? null });
+      const onlyProb = matchProb(m, { requireBothConfirmed: requireConfirmed });
+      const onlyDone = onlyLive?.status === "ft";
+      if (resultStyle) return resultCard(num, m.home, m.away, { extraClass: `later-round${onlyDone ? " finished" : ""}`, attrs: `data-match-num="${num}"`, homeProb: onlyProb.h, awayProb: onlyProb.a, homeIsWinner: onlyHW, awayIsWinner: onlyAW, homeScore: onlyLive?.home_score ?? null, awayScore: onlyLive?.away_score ?? null, showOddsBadge: onlyConfirmed, decidedByPen: onlyLive?.decided_by_pen ?? false, penHome: onlyLive?.pen_home ?? null, penAway: onlyLive?.pen_away ?? null });
+      return bracketTieCard(num, m.home, m.away, { extraClass: `later-round${onlyDone ? " finished" : ""}`, showProb, homeIsLoser: onlyAW === true, awayIsLoser: onlyHW === true, decidedByPen: onlyLive?.decided_by_pen ?? false, penHome: onlyLive?.pen_home ?? null, penAway: onlyLive?.pen_away ?? null });
     }
     return tbdResultCard(num);
   };
@@ -1126,13 +1125,15 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
     const liveM = allKnockoutMatches.find(x => x.number === num);
     const hIsWinner = liveM?.winner ? (liveM.winner === m.home?.team ? true : false) : undefined;
     const aIsWinner = liveM?.winner ? (liveM.winner === m.away?.team ? true : false) : undefined;
+    const isFinished = liveM?.status === "ft";
     if (resultStyle) _matchupModalData[num] = { kickoff: m.kickoff, home: m.home, away: m.away };
     if (resultStyle) {
       const r32Prob = matchProb(m);
-      html += resultCard(num, m.home, m.away, { style, attrs: `data-match-num="${num}"`, homeProb: r32Prob.h, awayProb: r32Prob.a, homeIsWinner: hIsWinner, awayIsWinner: aIsWinner, homeScore: liveM?.home_score ?? null, awayScore: liveM?.away_score ?? null, decidedByPen: liveM?.decided_by_pen ?? false, penHome: liveM?.pen_home ?? null, penAway: liveM?.pen_away ?? null });
+      html += resultCard(num, m.home, m.away, { extraClass: isFinished ? "finished" : "", style, attrs: `data-match-num="${num}"`, homeProb: r32Prob.h, awayProb: r32Prob.a, homeIsWinner: hIsWinner, awayIsWinner: aIsWinner, homeScore: liveM?.home_score ?? null, awayScore: liveM?.away_score ?? null, decidedByPen: liveM?.decided_by_pen ?? false, penHome: liveM?.pen_home ?? null, penAway: liveM?.pen_away ?? null });
     } else {
       html += bracketTieCard(num, m.home, m.away, {
         style, kickoff: m.kickoff, showProb,
+        extraClass: isFinished ? "finished" : "",
         homeScore: liveM?.home_score ?? null,
         awayScore: liveM?.away_score ?? null,
         homeIsLoser: aIsWinner === true,
@@ -1153,13 +1154,15 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
     const liveM = allKnockoutMatches.find(x => x.number === num);
     const hIsWinner = liveM?.winner ? (liveM.winner === m.home?.team ? true : false) : undefined;
     const aIsWinner = liveM?.winner ? (liveM.winner === m.away?.team ? true : false) : undefined;
+    const isFinished = liveM?.status === "ft";
     if (resultStyle) _matchupModalData[num] = { kickoff: m.kickoff, home: m.home, away: m.away };
     if (resultStyle) {
       const r32Prob = matchProb(m);
-      html += resultCard(num, m.home, m.away, { style, attrs: `data-match-num="${num}"`, homeProb: r32Prob.h, awayProb: r32Prob.a, homeIsWinner: hIsWinner, awayIsWinner: aIsWinner, homeScore: liveM?.home_score ?? null, awayScore: liveM?.away_score ?? null, decidedByPen: liveM?.decided_by_pen ?? false, penHome: liveM?.pen_home ?? null, penAway: liveM?.pen_away ?? null });
+      html += resultCard(num, m.home, m.away, { extraClass: isFinished ? "finished" : "", style, attrs: `data-match-num="${num}"`, homeProb: r32Prob.h, awayProb: r32Prob.a, homeIsWinner: hIsWinner, awayIsWinner: aIsWinner, homeScore: liveM?.home_score ?? null, awayScore: liveM?.away_score ?? null, decidedByPen: liveM?.decided_by_pen ?? false, penHome: liveM?.pen_home ?? null, penAway: liveM?.pen_away ?? null });
     } else {
       html += bracketTieCard(num, m.home, m.away, {
         style, kickoff: m.kickoff, showProb,
+        extraClass: isFinished ? "finished" : "",
         homeScore: liveM?.home_score ?? null,
         awayScore: liveM?.away_score ?? null,
         homeIsLoser: aIsWinner === true,
@@ -1200,7 +1203,7 @@ function renderBracket(bracket) {
   renderBracketInto(bracket, "bracket-grid", "bracket-spinner", { trackChanges: true, showProb: true });
 }
 function renderPredictedBracket(bracket) {
-  renderBracketInto(bracket, "predicted-bracket-grid", "predicted-bracket-spinner", { trackChanges: false, showProb: false, showOddsElo: true });
+  renderBracketInto(bracket, "predicted-bracket-grid", "predicted-bracket-spinner", { trackChanges: false, showProb: false, showOddsElo: true, requireConfirmed: false });
 }
 
 // "prob" is always P(advance to R32) now, regardless of current position.
@@ -2551,7 +2554,13 @@ function renderLabBracket(bracket, laterRounds) {
 
   grid.innerHTML = html;
   grid.querySelectorAll(".lab-card[data-slot]").forEach(card => {
-    card.addEventListener("click", () => openLabModal(card.dataset.slot));
+    const matchNum = parseInt(card.dataset.matchNum, 10);
+    const concluded = matchNum && allKnockoutMatches.find(m => m.number === matchNum && m.status === "ft" && m.winner);
+    if (concluded) {
+      card.classList.add("lab-concluded");
+    } else {
+      card.addEventListener("click", () => openLabModal(card.dataset.slot));
+    }
   });
   wireOddsBadges(grid);
   grid.querySelectorAll(".lab-card[data-number]").forEach(card => {

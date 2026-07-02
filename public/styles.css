@@ -177,6 +177,7 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
   box-sizing: border-box;
 }
 .tie-card.later-round { align-self: center; }
+.tie-card.finished { background: #f8f8fa; }
 .tie-card.just-updated {
   animation: pulse-border 2s ease-out;
 }
@@ -213,7 +214,7 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .team-prob-pill.tier-red    { background: #fee2e2; color: #b91c1c; }
 .team-prob-pill.tier-grey   { background: #e5e7eb; color: #4b5563; }
 .tie-score { font-size: 13px; font-weight: 800; color: #15151a; flex-shrink: 0; }
-.tie-pen-note { font-size: 10px; font-weight: 700; color: var(--muted); text-align: center; letter-spacing: 0.03em; padding: 2px 0 3px; }
+.pen-score { font-size: 10px; font-weight: 700; color: var(--muted); margin-left: 2px; }
 
 .tbd-card .match-num, .tbd-card .match-date { color: #b4b8c2; }
 .tbd-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 13px; font-weight: 600; }
@@ -242,6 +243,7 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .result-right { flex-shrink: 0; }
 .result-right.muted { font-size: 11px; font-weight: 700; color: #9aa0ad; }
 .result-right.scored { font-size: 15px; font-weight: 800; color: #15151a; }
+.result-right.scored .pen-score { font-size: 10px; font-weight: 700; color: var(--muted); vertical-align: middle; }
 /* Same shape/colors as .pos-badge's qualify-green (group standings), so a
    predicted match winner reads the same way a qualifying group position does. */
 .winner-badge {
