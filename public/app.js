@@ -1220,28 +1220,22 @@ function advanceProbPill(prob) {
   // it's truly guaranteed, not just very likely).
   const pct = prob >= 1 ? 100 : Math.min(99, Math.round((prob || 0) * 100));
   let cls;
-  if (pct >= 100) cls = "tier-green";
-  else if (pct >= 75) cls = "tier-yellow";
+  if (pct >= 75) cls = "tier-green";
+  else if (pct >= 51) cls = "tier-yellow";
   else if (pct >= 11) cls = "tier-orange";
-  else if (pct >= 1) cls = "tier-red";
+  else if (pct >= 1)  cls = "tier-red";
   else cls = "tier-grey";
   return { pct, cls, checkmark: "" };
 }
 
-// Head-to-head match win probability pill: green for the favorite (>50%),
-// orange→red for the underdog (<50%), scaled by how large the edge is.
 function matchWinPill(prob) {
   const pct = Math.round((prob || 0) * 100);
   let cls;
-  if      (pct >= 85) cls = "mw-g4";
-  else if (pct >= 70) cls = "mw-g3";
-  else if (pct >= 55) cls = "mw-g2";
-  else if (pct >  50) cls = "mw-g1";
-  else if (pct === 50) cls = "mw-neu";
-  else if (pct >= 45) cls = "mw-r1";
-  else if (pct >= 30) cls = "mw-r2";
-  else if (pct >= 15) cls = "mw-r3";
-  else                cls = "mw-r4";
+  if (pct >= 75)     cls = "tier-green";
+  else if (pct >= 51) cls = "tier-yellow";
+  else if (pct >= 11) cls = "tier-orange";
+  else if (pct >= 1)  cls = "tier-red";
+  else                cls = "tier-grey";
   return { pct, cls };
 }
 
