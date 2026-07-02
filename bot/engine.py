@@ -143,6 +143,9 @@ class TeamRecord:
             "goals_against": self.goals_against,
             "goal_diff": self.goal_diff,
             "points": self.points,
+            "yellow_cards": self.yellow_cards,
+            "red_cards": self.red_cards,
+            "fair_play": self.fair_play,
             "flag": FLAG_EMOJIS.get(self.name, "🏳"),
         }
 
@@ -166,6 +169,10 @@ def build_group_standings(group: str, results: list[dict]) -> list[TeamRecord]:
         h.played += 1; a.played += 1
         h.goals_for += hs; h.goals_against += as_
         a.goals_for += as_; a.goals_against += hs
+        h.yellow_cards += r.get("home_yellow", 0)
+        a.yellow_cards += r.get("away_yellow", 0)
+        h.red_cards += r.get("home_red", 0)
+        a.red_cards += r.get("away_red", 0)
         if hs > as_:
             h.won += 1; a.lost += 1
         elif hs == as_:
@@ -279,6 +286,29 @@ MATCH_NUMBERS: dict[str, int] = {
     "RB": 85, "R5": 86, "RK": 87, "R8": 88,
 }
 
+# Mirrors the JS KNOCKOUT_FEEDERS constant: {match_num: (feeder1, feeder2)}.
+# Match 103 (Bronze) is fed by the *losers* of the two SFs (101, 102).
+KNOCKOUT_FEEDERS: dict[int, tuple[int, int]] = {
+    89: (74, 77), 90: (73, 75), 91: (76, 78), 92: (79, 80),
+    93: (83, 84), 94: (81, 82), 95: (86, 88), 96: (85, 87),
+    97: (89, 90), 98: (93, 94), 99: (91, 92), 100: (95, 96),
+    101: (97, 98), 102: (99, 100),
+    103: (101, 102),  # Bronze Final — fed by losers of 101/102
+    104: (101, 102),  # Final — fed by winners of 101/102
+}
+
+# Mirrors the JS KNOCKOUT_KICKOFFS constant (UTC ISO strings).
+KNOCKOUT_KICKOFFS: dict[int, str] = {
+    89: "2026-07-04T21:00Z", 90: "2026-07-04T17:00Z",
+    91: "2026-07-05T20:00Z", 92: "2026-07-06T00:00Z",
+    93: "2026-07-06T19:00Z", 94: "2026-07-07T00:00Z",
+    95: "2026-07-07T16:00Z", 96: "2026-07-07T20:00Z",
+    97: "2026-07-09T20:00Z", 98: "2026-07-10T19:00Z",
+    99: "2026-07-11T21:00Z", 100: "2026-07-12T01:00Z",
+    101: "2026-07-14T19:00Z", 102: "2026-07-15T19:00Z",
+    103: "2026-07-18T21:00Z", 104: "2026-07-19T19:00Z",
+}
+
 # Display order (top to bottom) for the bracket tree — NOT the same as
 # sorting by match_number. A tree needs each vertically-adjacent pair of R32
 # rows to be the two matches whose winners actually meet in the R16, and
@@ -348,6 +378,89 @@ def project_bracket(
     return matches
 
 
+def project_full_knockout_bracket(
+    r32_bracket: list[dict],
+    ko_results: dict | None = None,
+    predict_unknown: bool = True,
+) -> list[dict]:
+    """Extend the 16-entry R32 bracket through R16, QF, SF, Bronze, and Final.
+
+    ko_results: {"|".join(sorted([home, away])): {home, away, home_score,
+    away_score, status}} — keyed by sorted team pair.
+
+    predict_unknown=True  (predicted tab): use odds/Elo when no actual result.
+    predict_unknown=False (actual tab): only advance teams from confirmed "ft"
+    results — unresolved matches are omitted entirely so the frontend renders
+    them as TBD placeholders."""
+    import forecast
+
+    ko_results = ko_results or {}
+    by_num: dict[int, dict] = {m["match_number"]: m for m in r32_bracket}
+
+    def _winner(num: int, want_loser: bool = False) -> tuple[Optional[str], Optional[str]]:
+        m = by_num.get(num)
+        if not m:
+            return None, None
+        home_t = (m["home"] or {}).get("team")
+        away_t = (m["away"] or {}).get("team")
+        home_f = (m["home"] or {}).get("flag", "🏳")
+        away_f = (m["away"] or {}).get("flag", "🏳")
+        if not home_t or not away_t:
+            return None, None
+
+        pair_key = "|".join(sorted([home_t, away_t]))
+        actual = ko_results.get(pair_key, {})
+        if actual.get("status") == "ft":
+            hs, as_ = actual["home_score"], actual["away_score"]
+            if actual.get("home") == home_t:
+                home_wins = hs > as_
+            else:
+                home_wins = as_ > hs
+            if home_wins:
+                return (away_t, away_f) if want_loser else (home_t, home_f)
+            return (home_t, home_f) if want_loser else (away_t, away_f)
+
+        if not predict_unknown:
+            return None, None
+
+        # Predict via outright odds only — never Elo (see forecast.knockout_advance_prob)
+        p_home, p_away = forecast.knockout_advance_prob(home_t, away_t)
+        if p_home >= p_away:
+            return (away_t, away_f) if want_loser else (home_t, home_f)
+        return (home_t, home_f) if want_loser else (away_t, away_f)
+
+    later: list[dict] = []
+    for num in sorted(KNOCKOUT_FEEDERS):
+        f1, f2 = KNOCKOUT_FEEDERS[num]
+        want_loser = (num == 103)
+        t1, fl1 = _winner(f1, want_loser)
+        t2, fl2 = _winner(f2, want_loser)
+        if not t1 and not t2:
+            continue  # neither feeder resolved — nothing to show yet
+        prefix = "L" if want_loser else "W"
+        entry: dict = {
+            "match_number": num,
+            "kickoff": KNOCKOUT_KICKOFFS.get(num),
+            "home": {"team": t1, "flag": fl1} if t1 else {"team": None, "label": f"{prefix}{f1}"},
+            "away": {"team": t2, "flag": fl2} if t2 else {"team": None, "label": f"{prefix}{f2}"},
+        }
+        if t1 and t2:
+            pair_key = "|".join(sorted([t1, t2]))
+            actual = ko_results.get(pair_key, {})
+            if actual.get("status") == "ft":
+                if actual.get("home") == t1:
+                    entry["home_score"] = actual["home_score"]
+                    entry["away_score"] = actual["away_score"]
+                else:
+                    entry["home_score"] = actual["away_score"]
+                    entry["away_score"] = actual["home_score"]
+                entry["status"] = "ft"
+        by_num[num] = entry
+        later.append(entry)
+
+    return r32_bracket + later
+
+
 def _get_team(standings: dict, group: str, pos: int) -> Optional[TeamRecord]:
     recs = standings.get(group, [])
     return recs[pos - 1] if len(recs) >= pos else None
@@ -397,6 +510,7 @@ def compute_state(
     results: list[dict],
     matches: list[dict] | None = None,
     r32_kickoffs: dict | None = None,
+    ko_results: dict | None = None,
 ) -> dict:
     standings = build_standings(results)
     thirds = rank_thirds(standings)
@@ -423,6 +537,7 @@ def compute_state(
             advance_prob[r.name] = p.get(1, 0.0) + p.get(2, 0.0) + thirds_qualify.get(r.name, 0.0)
 
     bracket = project_bracket(standings, pos_probs, r32_kickoffs, advance_prob)
+    bracket = project_full_knockout_bracket(bracket, ko_results, predict_unknown=False)
 
     standings_payload = {}
     for g, recs in standings.items():
@@ -444,30 +559,20 @@ def compute_predicted_state(
     results: list[dict],
     matches: list[dict],
     r32_kickoffs: dict | None = None,
+    ko_results: dict | None = None,
 ) -> dict:
     """The "Predicted Outcome" tab: every group resolved to its single most
     probable real final standing (see forecast.predicted_final_standings /
     _most_likely_group_scenario — every possible H/D/A combination for the
     remaining fixtures, weighted by real probability and aggregated by the
     resulting order), producing one deterministic group order and the
-    resulting R32 matchups — same bracket shape/rendering as compute_state(),
-    just fed a different (projected) dataset.
-
-    The standings payload here intentionally exposes only name + predicted
-    position, not points/GD/GF, even though those are now real achievable
-    numbers for this scenario (unlike the old expected-value model): the
-    Lab tab is the place a user inspects a concrete what-if scoreline, and
-    showing two numeric stat lines for the same projected order here would
-    just invite confusion about which one is "real."
-
-    bracket stops at the 16 R32 matches, same as compute_state() - R16 and
-    later are intentionally left as TBD rather than projected forward, since
-    those matchups don't exist yet (which two teams meet depends on R32
-    results that haven't happened) and projecting a guess on top of a
-    guess compounds speculation past the point of being useful."""
+    resulting R32 matchups — then extended through R16/QF/SF/Bronze/Final
+    using bookmaker odds (falling back to Elo) to pick the most likely
+    winner of each subsequent match."""
     import forecast
     predicted_standings = forecast.predicted_final_standings(results, matches)
     bracket = project_bracket(predicted_standings, r32_kickoffs=r32_kickoffs)
+    bracket = project_full_knockout_bracket(bracket, ko_results)
     standings_payload = {
         g: [
             {"name": r.name, "flag": FLAG_EMOJIS.get(r.name, "🏳"), "position": i + 1}

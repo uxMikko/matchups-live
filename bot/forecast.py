@@ -50,6 +50,30 @@ ELO_RATINGS: dict[str, float] = {}
 # _match_probs() falls back to the Elo estimate for everything else.
 REAL_ODDS: dict[str, dict] = {}
 
+# Tournament outright (winner) market probabilities, set by the caller.
+# {internal_team_name: implied_p_win_tournament}. Used by
+# knockout_advance_prob() for projected later-round fixtures instead of Elo.
+TOURNAMENT_PROBS: dict[str, float] = {}
+
+
+def knockout_advance_prob(home: str, away: str) -> tuple[float, float]:
+    """P(home advances), P(away advances) for a projected knockout fixture.
+    Source priority: (1) match h2h odds from REAL_ODDS (p_draw=0 confirms
+    it's a 2-way knockout market), (2) tournament outright ratio, (3) 50/50.
+    Never uses Elo — knockout projections are odds-only."""
+    key = "|".join(sorted([home, away]))
+    real = REAL_ODDS.get(key)
+    if real and real.get("p_draw", 1) < 0.01:
+        if real["home"] == home:
+            return real["p_home"], real["p_away"]
+        return real["p_away"], real["p_home"]
+    ph = TOURNAMENT_PROBS.get(home, 0)
+    pa = TOURNAMENT_PROBS.get(away, 0)
+    if ph > 0 or pa > 0:
+        total = ph + pa
+        return (ph / total, pa / total) if total > 0 else (0.5, 0.5)
+    return 0.5, 0.5
+
 
 def _strength(team: str) -> float:
     """10**(rating/400) is the standard Elo/Bradley-Terry parameterization:

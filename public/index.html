@@ -93,13 +93,13 @@
     </div>
 
     <!-- PREDICTED GROUP STANDINGS -->
-    <div class="section">
+    <div class="section" id="predicted-standings-section">
       <div class="section-title">Odds-Based Final Group Standings</div>
       <div id="predicted-standings-grid" class="groups-grid"></div>
     </div>
 
     <!-- PREDICTED THIRD-PLACE RACE -->
-    <div class="section">
+    <div class="section" id="predicted-thirds-section">
       <div class="section-title">Odds-Based Third-Place Race</div>
       <div id="predicted-thirds-list" class="thirds-list"></div>
     </div>
@@ -115,16 +115,26 @@
       <div class="bracket-tree-wrap">
         <div id="lab-bracket-grid" class="bracket-tree lab-tree"></div>
       </div>
+      <div id="futures-bet-banner" class="futures-bet-banner" style="display:none">
+        <div class="futures-bet-text"><strong>Like your bracket?</strong> Back it with a futures bet on the tournament winner.</div>
+        <div class="futures-bet-actions">
+          <button type="button" class="futures-bet-btn" data-bookie="unibet">Bet at Unibet</button>
+          <button type="button" class="futures-bet-btn" data-bookie="betsson">Bet at Betsson</button>
+        </div>
+        <div class="futures-bet-disclosure">
+          Advertisement — matchups.live may earn a commission if you sign up through these links, at no extra cost to you. 18+ only. Please gamble responsibly — <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a>.
+        </div>
+      </div>
     </div>
 
     <!-- LAB GROUP STANDINGS -->
-    <div class="section">
+    <div class="section" id="lab-standings-section">
       <div class="section-title">Group Standings (your scenario)</div>
       <div id="lab-standings-grid" class="groups-grid"></div>
     </div>
 
     <!-- LAB THIRD-PLACE RACE -->
-    <div class="section">
+    <div class="section" id="lab-thirds-section">
       <div class="section-title">Third-Place Race (your scenario)</div>
       <div id="lab-thirds-list" class="thirds-list"></div>
     </div>
@@ -171,6 +181,44 @@
   <span class="cookie-text">This site uses cookies to remember your preferences and improve your experience.</span>
   <button type="button" id="cookie-accept-btn" class="cookie-accept-btn">Accept</button>
 </div>
+
+<!-- Shown once per browser, before any odds figures or bookmaker names
+     ever render - see bettingAgeConfirmed() in the script below. -->
+<div id="age-gate-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="age-gate-modal">
+    <div class="age-gate-title">Betting odds</div>
+    <p class="age-gate-text">You must be 18 or older (or the legal gambling age where you live, if higher) to view betting odds or follow a link to a sportsbook.</p>
+    <p class="age-gate-text">If gambling is causing you or someone you know harm, free confidential help is available 24/7: <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a> · <a href="https://www.gamblingtherapy.org" target="_blank" rel="noopener noreferrer">Gambling Therapy</a> · 1-800-GAMBLER (US).</p>
+    <div class="age-gate-actions">
+      <button type="button" id="age-gate-cancel" class="age-gate-cancel-btn">Cancel</button>
+      <button type="button" id="age-gate-confirm" class="age-gate-confirm-btn">I'm 18+, show odds</button>
+    </div>
+  </div>
+</div>
+
+<div id="matchup-info-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="matchup-info-modal">
+    <div class="lab-modal-header">
+      <span id="matchup-info-title" class="matchup-info-title"></span>
+      <button type="button" id="matchup-info-close" class="lab-modal-close">✕</button>
+    </div>
+    <div id="matchup-info-body" class="matchup-info-body"></div>
+  </div>
+</div>
+
+<div id="odds-modal-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="odds-modal">
+    <div class="lab-modal-header">
+      <span id="odds-modal-title"></span>
+      <button type="button" id="odds-modal-close" class="lab-modal-close">✕</button>
+    </div>
+    <div id="odds-modal-body" class="odds-modal-body"></div>
+    <div class="odds-modal-disclosure">
+      Advertisement — matchups.live may earn a commission if you sign up through these links, at no extra cost to you. Odds shown were accurate as of our last update and may differ from each operator's current live price. 18+ only. Please gamble responsibly — <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a>.
+    </div>
+  </div>
+</div>
+
 
 <script src="/app.js"></script>
 </body>

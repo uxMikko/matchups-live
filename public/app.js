@@ -29,26 +29,36 @@ function flagImg(team) {
 const LANG = (typeof window !== "undefined" && window.LANG) || "en";
 const I18N = {
   en: {
+    odds_badge: "Odds", bet_at: "Bet at",
+    bookie_home: "Home", bookie_draw: "Draw", bookie_away: "Away",
+    odds_unavailable: "Odds for this match aren't available right now.",
     kicking_off: "Kicking off", countdown_in: "in",
     finished: "Finished", group_label: "Group", tbd: "TBD",
     round_r32: "Round of 32", round_r16: "Round of 16", round_qf: "Quarterfinals",
     round_sf: "Semifinals", round_final: "Final",
     round_r16_singular: "Round of 16", round_qf_singular: "Quarterfinal",
     round_sf_singular: "Semifinal", round_bronze_singular: "Bronze Final",
+    round_qf_abbr: "QF", round_sf_abbr: "SF",
     updating_badge: "UPDATING", mp: "MP", gd: "GD", pts: "Pts", prob: "Prob",
+    col_grp: "Grp", col_w: "W", col_d: "D", col_l: "L", col_gf: "GF", col_ga: "GA", col_tcs: "TCS",
     updated_just_now: "Updated just now", refresh_now: "Refresh now",
     match_label: "Match", thirds_race_short: "3rd-Place Race", thirds_race: "Third-Place Race",
     thirds_race_odds: "Odds-Based Third-Place Race", live_now: "Live now",
     tie_note: "Tied — who wins on penalties?",
   },
   es: {
+    odds_badge: "Cuotas", bet_at: "Apostar en",
+    bookie_home: "Local", bookie_draw: "Empate", bookie_away: "Visitante",
+    odds_unavailable: "Las cuotas de este partido no están disponibles por ahora.",
     kicking_off: "Comienza ya", countdown_in: "en",
     finished: "Finalizado", group_label: "Grupo", tbd: "Por definir",
     round_r32: "Dieciseisavos", round_r16: "Octavos", round_qf: "Cuartos",
     round_sf: "Semifinales", round_final: "Final",
     round_r16_singular: "Octavos de Final", round_qf_singular: "Cuarto de Final",
     round_sf_singular: "Semifinal", round_bronze_singular: "Tercer Puesto",
+    round_qf_abbr: "CF", round_sf_abbr: "SF",
     updating_badge: "ACTUALIZANDO", mp: "PJ", gd: "DG", pts: "Pts", prob: "Prob",
+    col_grp: "Gr.", col_w: "G", col_d: "E", col_l: "P", col_gf: "GF", col_ga: "GC", col_tcs: "TCS",
     updated_just_now: "Actualizado justo ahora", refresh_now: "Actualizar ahora",
     match_label: "Partido", thirds_race_short: "Terceros Lugares", thirds_race: "Carrera por el Tercer Lugar",
     thirds_race_odds: "Terceros Lugares Proyectados", live_now: "En vivo",
@@ -111,7 +121,330 @@ let cachedState = {
 // this is what makes the live score/clock feel actually live.
 let liveMatches = [];
 let allMatches = []; // every group-stage match (any status) — backs the today's-games strip
+let knockoutLiveData = []; // raw knockout live/score data from the live endpoint (keyed by match number)
+let allKnockoutMatches = []; // built knockout strip entries (derived from bracket + knockoutLiveData)
 const liveTickers = {}; // matchKey -> {baseMinute, fetchedAtMs, status, label}
+
+// ── ODDS / BETTING CONTENT GATING ───────────────────────────────────────────
+// Affiliate odds content is opt-IN by country, not opt-out: empty until
+// explicitly populated once real affiliate-program market clearance is
+// known, so a visitor from an unrecognized/unchecked country never sees it
+// by accident. Geo comes from Netlify's own edge geolocation (see
+// netlify/functions/geo.js) - fetched once per page load, not per card.
+const ODDS_ALLOWED_COUNTRIES = [];
+let visitorCountry = null;
+let visitorCountryLoaded = false;
+async function fetchVisitorGeo() {
+  try {
+    const res = await fetch("/api/geo");
+    const data = await res.json();
+    visitorCountry = data.country || null;
+  } catch (e) {
+    visitorCountry = null;
+  } finally {
+    visitorCountryLoaded = true;
+    renderAll();
+  }
+}
+function oddsGeoAllowed() {
+  return ODDS_ALLOWED_COUNTRIES.includes(visitorCountry);
+}
+
+// Separate gate from geo, and deliberately not combined into one check:
+// oddsGeoAllowed() controls whether a neutral "Odds" badge (no figures,
+// no bookmaker names) appears at all; this controls what happens when
+// it's clicked - confirmed once per browser (localStorage) and persists,
+// so actual odds/bookmaker content only ever renders after this is true.
+const BETTING_AGE_KEY = "bettingAgeConfirmed";
+function bettingAgeConfirmed() {
+  return localStorage.getItem(BETTING_AGE_KEY) === "yes";
+}
+
+// bot/odds_api.py's bookmaker_odds is keyed by its own home/away
+// orientation (whichever side The Odds API called home) - re-orient to
+// match whatever home/away this specific call site is using before
+// handing it back, so callers never have to think about that.
+function realOddsFor(home, away) {
+  const entry = (cachedState.real_odds || {})[[home, away].sort().join("|")];
+  const bm = entry?.bookmaker_odds;
+  if (!bm || Object.keys(bm).length === 0) return null;
+  const flip = entry.home !== home;
+  const reorient = o => !o ? null : flip ? { home: o.away, draw: o.draw, away: o.home } : o;
+  return { unibet: reorient(bm.unibet), betsson: reorient(bm.betsson) };
+}
+function hasRealOdds(home, away) {
+  return !!realOddsFor(home, away);
+}
+
+// Pre-confirmation, this is the only "betting content" any visitor sees -
+// a plain text label, no odds figures, no bookmaker names - clicking it is
+// what triggers the age gate. Returns "" (renders nothing) unless the
+// visitor's country is on the allow-list AND real odds actually exist for
+// this exact matchup.
+function oddsBadgeHtml(home, away) {
+  if (!home || !away || !oddsGeoAllowed() || !hasRealOdds(home, away)) return "";
+  return `<button type="button" class="odds-badge" data-home="${home}" data-away="${away}">${tr("odds_badge")}</button>`;
+}
+function wireOddsBadges(container) {
+  container.querySelectorAll(".odds-badge").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation(); // cards this sits inside may have their own click handler
+      openOddsModal(btn.dataset.home, btn.dataset.away);
+    });
+  });
+}
+
+// Generic "do this once 18+ is confirmed" gate - openOddsModal and the
+// futures-bet banner buttons both funnel through this rather than each
+// keeping their own pending-action state.
+let pendingAgeGateAction = null;
+function requireAgeGate(action) {
+  if (!bettingAgeConfirmed()) {
+    pendingAgeGateAction = action;
+    document.getElementById("age-gate-backdrop").style.display = "flex";
+    return;
+  }
+  action();
+}
+function openOddsModal(home, away) {
+  requireAgeGate(() => renderOddsModal(home, away));
+}
+function bookieOddsRow(name, href, o) {
+  return `<div class="bookie-row">
+    <div class="bookie-row-top">
+      <span class="bookie-name">${name}</span>
+      <a class="bookie-link" href="${href}" target="_blank" rel="noopener noreferrer sponsored">${tr("bet_at")} ${name}</a>
+    </div>
+    <div class="bookie-odds-cells">
+      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_home")}</span><span class="bookie-odds-value">${o.home.toFixed(2)}</span></div>
+      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_draw")}</span><span class="bookie-odds-value">${o.draw.toFixed(2)}</span></div>
+      <div class="bookie-odds-cell"><span class="bookie-odds-label">${tr("bookie_away")}</span><span class="bookie-odds-value">${o.away.toFixed(2)}</span></div>
+    </div>
+  </div>`;
+}
+function renderOddsModal(home, away) {
+  const odds = realOddsFor(home, away) || {};
+  document.getElementById("odds-modal-title").textContent = `${tn(home)} vs ${tn(away)}`;
+  const rows = [
+    odds.unibet ? bookieOddsRow("Unibet", "https://www.unibet.com", odds.unibet) : "",
+    odds.betsson ? bookieOddsRow("Betsson", "https://www.betsson.com", odds.betsson) : "",
+  ].filter(Boolean);
+  document.getElementById("odds-modal-body").innerHTML = rows.join("")
+    || `<p class="odds-modal-empty">${tr("odds_unavailable")}</p>`;
+  document.getElementById("odds-modal-backdrop").style.display = "flex";
+}
+document.getElementById("age-gate-confirm").addEventListener("click", () => {
+  localStorage.setItem(BETTING_AGE_KEY, "yes");
+  document.getElementById("age-gate-backdrop").style.display = "none";
+  const action = pendingAgeGateAction;
+  pendingAgeGateAction = null;
+  if (action) action();
+});
+function closeAgeGate() {
+  document.getElementById("age-gate-backdrop").style.display = "none";
+  pendingAgeGateAction = null;
+}
+document.getElementById("age-gate-cancel").addEventListener("click", closeAgeGate);
+document.getElementById("age-gate-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "age-gate-backdrop") closeAgeGate();
+});
+document.getElementById("odds-modal-close").addEventListener("click", () => {
+  document.getElementById("odds-modal-backdrop").style.display = "none";
+});
+document.getElementById("odds-modal-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "odds-modal-backdrop") document.getElementById("odds-modal-backdrop").style.display = "none";
+});
+
+// ── MATCHUP INFO MODAL ────────────────────────────────────────────────────────
+let _matchupModalData = {};   // matchNum → { kickoff, home, away }
+let _matchupOddsMode = "decimal";
+let _matchupOpenNum = null;
+
+function _mimGcd(a, b) { return b === 0 ? a : _mimGcd(b, a % b); }
+function _toFractional(dec) {
+  const n = Math.round((dec - 1) * 100);
+  const d = 100;
+  const g = _mimGcd(Math.abs(n), d);
+  return `${n / g}/${d / g}`;
+}
+function _fmtOdds(dec) {
+  return _matchupOddsMode === "fractional" ? _toFractional(dec) : dec.toFixed(2);
+}
+
+function openMatchupInfoModal(num) {
+  const data = _matchupModalData[num];
+  if (!data) return;
+  _matchupOpenNum = num;
+  const { home, away } = data;
+  const homeLabel = home?.team ? tn(home.team) : `W${num}`;
+  const awayLabel = away?.team ? tn(away.team) : `W${num}`;
+  document.getElementById("matchup-info-title").textContent = `${homeLabel} vs ${awayLabel}`;
+  _renderMatchupInfoBody();
+  document.getElementById("matchup-info-backdrop").style.display = "flex";
+}
+
+function _mimFlagHtml(team) {
+  const code = TEAM_CODES[team];
+  if (!code) return `<span class="mim-flag" style="background:#ddd"></span>`;
+  return `<img class="mim-flag" src="/flags/${code}.svg" alt="">`;
+}
+
+function _renderMatchupInfoBody() {
+  const num = _matchupOpenNum;
+  const data = _matchupModalData[num];
+  if (!data) return;
+  const { kickoff, home, away } = data;
+  const hasHome = !!home?.team, hasAway = !!away?.team;
+
+  // Live/result state from allKnockoutMatches (always up-to-date)
+  const liveM = allKnockoutMatches.find(x => x.number === num);
+  const matchStatus = liveM?.status ?? "ns";
+  const homeScore = liveM?.home_score ?? null;
+  const awayScore = liveM?.away_score ?? null;
+  const isFinished = matchStatus === "ft";
+  const isLive = matchStatus === "live" || matchStatus === "ht";
+
+  // Win probabilities: match h2h odds first (p_draw=0 = knockout 2-way market),
+  // then tournament outright ratio. No ELO.
+  const oddsKey = hasHome && hasAway ? [home.team, away.team].sort().join("|") : null;
+  const oddsEntry = oddsKey ? (cachedState.real_odds?.[oddsKey] ?? null) : null;
+  const isKnockoutH2h = oddsEntry && (oddsEntry.p_draw ?? 1) < 0.01;
+  let pHome = null, pAway = null;
+  let probSource = null;
+  if (isKnockoutH2h) {
+    const flip = oddsEntry.home !== home.team;
+    pHome = flip ? oddsEntry.p_away : oddsEntry.p_home;
+    pAway = flip ? oddsEntry.p_home : oddsEntry.p_away;
+    probSource = "h2h";
+  } else {
+    const tp = cachedState.tournament_probs || {};
+    const tH = hasHome ? tp[home.team] : null;
+    const tA = hasAway ? tp[away.team] : null;
+    if (tH > 0 && tA > 0) {
+      pHome = tH / (tH + tA);
+      pAway = tA / (tH + tA);
+      probSource = "outright";
+    }
+  }
+  const pct = (v) => Math.round(v * 100);
+  const useOdds = probSource === "h2h";
+
+  let html = "";
+
+  // ── Team header: flag above name above win probability ─────────────────────
+  if (hasHome && hasAway) {
+    const { cls: hCls } = pHome != null ? advanceProbPill(pHome) : { cls: "tier-grey" };
+    const { cls: aCls } = pAway != null ? advanceProbPill(pAway) : { cls: "tier-grey" };
+    html += `<div class="mim-teams">
+      <div class="mim-team">
+        ${_mimFlagHtml(home.team)}
+        <span class="mim-team-name">${tn(home.team)}</span>
+        ${pHome != null ? `<span class="mim-team-prob team-prob-pill ${hCls}">${pct(pHome)}%</span>` : ""}
+      </div>
+      <div class="mim-vs-col">vs</div>
+      <div class="mim-team">
+        ${_mimFlagHtml(away.team)}
+        <span class="mim-team-name">${tn(away.team)}</span>
+        ${pAway != null ? `<span class="mim-team-prob team-prob-pill ${aCls}">${pct(pAway)}%</span>` : ""}
+      </div>
+    </div>`;
+  }
+
+  // ── Match state: finished score / live score / kickoff date ───────────────
+  if (isFinished && homeScore != null && awayScore != null) {
+    html += `<div class="mim-score-display">
+      <div class="mim-score-nums">${homeScore} – ${awayScore}</div>
+      <div class="mim-score-meta">Final</div>
+    </div>`;
+  } else if (isLive && homeScore != null && awayScore != null) {
+    const minLabel = liveM?.minute ? `${liveM.minute}'` : (matchStatus === "ht" ? "HT" : "Live");
+    html += `<div class="mim-score-display">
+      <div class="mim-score-nums">${homeScore} – ${awayScore}</div>
+      <div class="mim-score-meta"><span class="mim-live-dot"></span>${minLabel}</div>
+    </div>`;
+  } else if (kickoff) {
+    const d = new Date(kickoff);
+    const dateStr = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+      + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    html += `<div class="mim-kickoff">📅 ${dateStr}</div>`;
+  }
+
+  // ── Odds / ELO section (skip when finished — result speaks for itself) ────
+  if (!isFinished) {
+    if (pHome != null) {
+      const fairH = 1 / pHome, fairA = 1 / pAway;
+      const hName = hasHome ? tn(home.team) : "Home";
+      const aName = hasAway ? tn(away.team) : "Away";
+      html += `<div class="mim-odds-toggle">
+        <span class="mim-toggle-label">Format</span>
+        <button class="mim-toggle-btn${_matchupOddsMode === "decimal" ? " active" : ""}" data-mode="decimal">Decimal</button>
+        <button class="mim-toggle-btn${_matchupOddsMode === "fractional" ? " active" : ""}" data-mode="fractional">Fractional</button>
+      </div>
+      <div class="mim-odds-row">
+        <div class="mim-odds-cell">
+          <span class="mim-odds-label">${hName}</span>
+          <span class="mim-odds-value">${_fmtOdds(fairH)}</span>
+          <span class="mim-odds-implied">${pct(pHome)}%</span>
+        </div>
+        <div class="mim-odds-cell">
+          <span class="mim-odds-label">${aName}</span>
+          <span class="mim-odds-value">${_fmtOdds(fairA)}</span>
+          <span class="mim-odds-implied">${pct(pAway)}%</span>
+        </div>
+      </div>`;
+
+      if (probSource === "h2h") {
+        html += `<div class="mim-source"><span class="mim-source-icon">ⓘ</span>Market-implied win probabilities averaged across bookmakers and de-vigged. Reflects chance to advance including extra time and penalties.</div>`;
+      } else if (probSource === "outright") {
+        html += `<div class="mim-source"><span class="mim-source-icon">ⓘ</span>Derived from tournament outright (winner) market odds — ratio of each team's implied probability of winning the tournament.</div>`;
+      }
+    }
+  }
+
+  document.getElementById("matchup-info-body").innerHTML = html;
+
+  document.querySelectorAll(".mim-toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      _matchupOddsMode = btn.dataset.mode;
+      _renderMatchupInfoBody();
+    });
+  });
+}
+
+document.getElementById("matchup-info-close").addEventListener("click", () => {
+  document.getElementById("matchup-info-backdrop").style.display = "none";
+});
+document.getElementById("matchup-info-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "matchup-info-backdrop") document.getElementById("matchup-info-backdrop").style.display = "none";
+});
+
+// Delegated click handler — wired once; data populated fresh on each render
+document.getElementById("predicted-bracket-grid").addEventListener("click", (e) => {
+  if (e.target.closest(".odds-badge")) return;
+  const card = e.target.closest("[data-match-num]");
+  if (!card) return;
+  const num = parseInt(card.dataset.matchNum, 10);
+  if (!_matchupModalData[num]) return;
+  openMatchupInfoModal(num);
+});
+
+// Root-domain-only placeholders, same reasoning as the per-match bookie
+// links above: no verified, stable deep link to either operator's actual
+// World Cup outright-winner market exists yet - swap these for real
+// tracking links once the affiliate accounts are approved.
+const FUTURES_BOOKIE_LINKS = {
+  unibet: "https://www.unibet.com",
+  betsson: "https://www.betsson.com",
+};
+function updateFuturesBanner() {
+  document.getElementById("futures-bet-banner").style.display = oddsGeoAllowed() ? "flex" : "none";
+}
+document.querySelectorAll(".futures-bet-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const href = FUTURES_BOOKIE_LINKS[btn.dataset.bookie];
+    requireAgeGate(() => window.open(href, "_blank", "noopener,noreferrer"));
+  });
+});
 
 function matchKey(m) { return `${m.home}_${m.away}`; }
 
@@ -219,6 +552,71 @@ function formatCountdown(iso) {
 // Falls back to the single nearest day's matches only once the whole
 // tournament's done and there's nothing live/upcoming/recent left at all.
 const RECENT_FINISHED_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function knockoutRoundLabel(num) {
+  if (num <= 88)  return tr("round_r32");
+  if (num <= 96)  return tr("round_r16");
+  if (num <= 100) return tr("round_qf_singular");
+  if (num <= 102) return tr("round_sf_singular");
+  if (num === 103) return tr("round_bronze_singular");
+  return tr("round_final");
+}
+
+// Build strip entries for all known knockout matches. cachedState.bracket
+// starts with 16 R32 entries (teams known once the group stage is settled)
+// and grows to include R16/QF/SF/Final entries as the engine propagates
+// results through the bracket. Live scores/status come from allKnockoutMatches
+// (populated by the live endpoint once knockout polling is added).
+function buildKnockoutStripEntries() {
+  if (!cachedState?.bracket) return [];
+  const liveByNum = {};
+  for (const m of knockoutLiveData) {
+    if (m.number) liveByNum[m.number] = m;
+  }
+  // Map each match number to the team that appears as home/away in the next
+  // round — that team won. Handles ET/penalty results where the score ties.
+  // KNOCKOUT_FEEDERS[laterNum] = [feeder0, feeder1]; feeder0 → home, feeder1 → away.
+  const laterByNum = {};
+  for (const m of cachedState.bracket.slice(16)) {
+    if (m.match_number) laterByNum[m.match_number] = m;
+  }
+  const winnerOf = {};
+  for (const [laterStr, feeders] of Object.entries(KNOCKOUT_FEEDERS)) {
+    const laterM = laterByNum[parseInt(laterStr)];
+    if (!laterM) continue;
+    if (feeders[0] != null && laterM.home?.team) winnerOf[feeders[0]] = laterM.home.team;
+    if (feeders[1] != null && laterM.away?.team) winnerOf[feeders[1]] = laterM.away.team;
+  }
+
+  const entries = [];
+  for (const m of cachedState.bracket) {
+    if (!m.home?.team || !m.away?.team || !m.match_number) continue;
+    const live = liveByNum[m.match_number];
+    const hs = live?.home_score ?? null, as_ = live?.away_score ?? null;
+    const status = live?.status ?? "ns";
+    let winner = winnerOf[m.match_number] ?? null;
+    if (!winner && status === "ft" && hs != null && as_ != null && hs !== as_) {
+      winner = hs > as_ ? m.home.team : m.away.team;
+    }
+    entries.push({
+      number: m.match_number,
+      home: m.home.team,
+      away: m.away.team,
+      home_score: hs,
+      away_score: as_,
+      minute: live?.minute ?? null,
+      status,
+      winner,
+      kickoff: m.kickoff ?? KNOCKOUT_KICKOFFS[m.match_number],
+      round_label: knockoutRoundLabel(m.match_number),
+      decided_by_pen: live?.decided_by_pen ?? false,
+      pen_home: live?.pen_home ?? null,
+      pen_away: live?.pen_away ?? null,
+    });
+  }
+  return entries;
+}
+
 function renderTodayStrip(allMatches) {
   const section = document.getElementById("today-section");
   const container = document.getElementById("today-matches-container");
@@ -251,15 +649,16 @@ function renderTodayStrip(allMatches) {
   windowMatches.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
   section.style.display = "block";
 
-  // Only the single next upcoming match gets a live countdown - every
-  // other not-yet-started card just shows its plain kickoff time.
-  const nextUpcoming = windowMatches.find(m => m.status !== "live" && m.status !== "ht" && m.status !== "ft");
+  // Every upcoming match sharing the *earliest* kickoff gets a live
+  // countdown, not just the first one in sort order - two matches often
+  // kick off at the exact same time, and both should count down together.
+  const nextKickoff = windowMatches.find(m => m.status !== "live" && m.status !== "ht" && m.status !== "ft")?.kickoff;
 
   container.innerHTML = windowMatches.map(m => {
     const isLive = m.status === "live" || m.status === "ht";
     const isFinished = m.status === "ft";
     const showScore = isLive || isFinished;
-    const isNextUpcoming = !isLive && !isFinished && nextUpcoming && m.number === nextUpcoming.number;
+    const isNextUpcoming = !isLive && !isFinished && nextKickoff && m.kickoff === nextKickoff;
 
     // One slot now carries both the status and whatever time is relevant
     // to it - live games show the ticking minute (red), the next upcoming
@@ -283,7 +682,7 @@ function renderTodayStrip(allMatches) {
     <div class="today-card${isLive ? " live" : ""}${isFinished ? " finished" : ""}" data-number="${m.number}">
       <div class="today-card-top">
         <span class="today-match-num">${m.number}</span>
-        <span class="today-group">${tr("group_label")} ${m.group}</span>
+        <span class="today-group">${m.round_label ?? (tr("group_label") + " " + m.group)}</span>
         ${statusLabel}
       </div>
       <div class="today-team-row">
@@ -296,8 +695,10 @@ function renderTodayStrip(allMatches) {
         <span class="today-team-name">${tn(m.away)}</span>
         ${scoreSpan(m.away_score)}
       </div>
+      ${oddsBadgeHtml(m.home, m.away) ? `<div class="today-card-odds">${oddsBadgeHtml(m.home, m.away)}</div>` : ""}
     </div>`;
   }).join("");
+  wireOddsBadges(container);
 
   // Auto-scroll so the live game (or, if none, the next upcoming one) sits
   // at the left edge of the visible strip - finished games scroll off to
@@ -325,7 +726,7 @@ function renderTodayStrip(allMatches) {
 function tickTodayStatuses() {
   document.querySelectorAll("#today-matches-container .today-card[data-number]").forEach(card => {
     const num = parseInt(card.dataset.number, 10);
-    const m = allMatches.find(x => x.number === num);
+    const m = allMatches.find(x => x.number === num) ?? allKnockoutMatches.find(x => x.number === num);
     if (!m) return;
     const statusEl = card.querySelector(".today-status");
     if (!statusEl) return;
@@ -359,18 +760,94 @@ function detectChanges(newBracket) {
   setTimeout(() => updatedSlots.clear(), 360000); // clear after 6 min
 }
 
-function teamRow(t, showProb = true) {
-  if (!t || !t.team) {
-    return `<div class="tie-team"><span class="seed">${t?.seed || ""}</span><span class="name" style="color:#9aa0ad">${t?.label || tr("tbd")}</span></div>`;
-  }
-  const probPct = Math.round((t.prob || 0) * 100);
-  const pillCls = probPct >= 100 ? "green" : "orange";
-  const pill = showProb ? `<span class="team-prob-pill ${pillCls}">${probPct}%</span>` : "";
-  return `<div class="tie-team">
-    <span class="seed">${t.seed}</span>
-    ${flagImg(t.team)}
-    <span class="name">${tn(t.team)}</span>
-    ${pill}
+// THE canonical tie-card renderer — one component for every "Live Standings"
+// bracket card and every TBD/partial slot across all tabs. resultCard() handles
+// the separate result-layout (Odds-Based / Lab) and is NOT replaced.
+//
+// home/away: team objects (with .team, .seed, .prob) or null/undefined for TBD.
+// homeFeeder/awayFeeder: feeder match number (e.g. 74) for R16+ slots; the seed
+//   slot shows "{feederPrefix}{n}" (e.g. "W74"). Omit for R32 where t.seed
+//   already contains the group seed ("1E", "2B", etc).
+// showProb: show advancement-probability pills, suppressed at 100% (certain).
+// homeScore/awayScore: show the final/live score instead of a pill when set.
+// kickoff: explicit ISO date string; falls back to KNOCKOUT_KICKOFFS[num] (R16+)
+//   then to nothing. R32 always passes m.kickoff since they're not in that map.
+function bracketTieCard(num, home, away, {
+  style = "", extraClass = "", attrs = "",
+  kickoff = null,
+  homeFeeder = null, awayFeeder = null, feederPrefix = "W",
+  showProb = false,
+  homeScore = null, awayScore = null,
+  homeIsLoser = false, awayIsLoser = false,
+  isUpdated = false,
+  showOddsBadge = false,
+  decidedByPen = false, penHome = null, penAway = null,
+} = {}) {
+  const date = kickoff ?? KNOCKOUT_KICKOFFS[num];
+  const hasTbd = !home?.team || !away?.team;
+  const classes = ["tie-card", hasTbd ? "tbd-card" : "", extraClass, isUpdated ? "just-updated" : ""]
+    .filter(Boolean).join(" ");
+
+  const row = (t, feederNum, score, isLoser) => {
+    const seedStr = feederNum != null ? `${feederPrefix}${feederNum}` : (t?.seed ?? "");
+    if (!t?.team) {
+      return `<div class="tbd-team">
+        <span class="seed">${seedStr}</span>
+        <span class="flag-placeholder">?</span>
+        <span class="name">${tr("tbd")}</span>
+      </div>`;
+    }
+    // For upcoming knockout matches: show win probability from real odds only.
+    // Priority: (1) match h2h odds (p_draw=0 = actual knockout 2-way market),
+    // (2) tournament outright ratio p_A/(p_A+p_B). No ELO fallback.
+    let prob = t.prob || 0;
+    if (home?.team && away?.team && score == null) {
+      const oddsKey = [home.team, away.team].sort().join("|");
+      const oddsEntry = cachedState.real_odds?.[oddsKey];
+      if (oddsEntry && (oddsEntry.p_draw ?? 1) < 0.01) {
+        const flip = oddsEntry.home !== home.team;
+        prob = t.team === home.team
+          ? (flip ? oddsEntry.p_away : oddsEntry.p_home)
+          : (flip ? oddsEntry.p_home : oddsEntry.p_away);
+      } else {
+        const tp = cachedState.tournament_probs || {};
+        const tH = tp[home.team], tA = tp[away.team];
+        if (tH > 0 && tA > 0) {
+          const hWin = tH / (tH + tA);
+          prob = t.team === home.team ? hWin : 1 - hWin;
+        }
+      }
+    }
+    const { pct: probPct, cls: pillCls } = advanceProbPill(prob);
+    let right = "";
+    if (score != null) {
+      right = `<span class="tie-score">${score}</span>`;
+    } else if (showProb && prob > 0 && probPct < 100) {
+      right = `<span class="team-prob-pill ${pillCls}">${probPct}%</span>`;
+    }
+    return `<div class="tie-team${isLoser ? " loser" : ""}">
+      <span class="seed">${seedStr}</span>
+      ${flagImg(t.team)}
+      <span class="name">${tn(t.team)}</span>
+      ${right}
+    </div>`;
+  };
+
+  const badge = showOddsBadge && home?.team && away?.team ? oddsBadgeHtml(home.team, away.team) : "";
+  const penNote = decidedByPen
+    ? `<div class="tie-pen-note">AET${penHome != null && penAway != null ? ` · PEN ${penHome}–${penAway}` : ""}</div>`
+    : "";
+
+  return `<div class="${classes}" data-match-num="${num}" style="${style}" ${attrs}>
+    <div class="tie-top">
+      <span class="match-num">${num}</span>
+      ${date ? `<span class="match-date">${formatKickoff(date)}</span>` : ""}
+      ${isUpdated ? `<span class="updating-badge">🔴 ${tr("updating_badge")}</span>` : ""}
+      ${badge}
+    </div>
+    ${row(home, homeFeeder, homeScore, homeIsLoser)}
+    ${row(away, awayFeeder, awayScore, awayIsLoser)}
+    ${penNote}
   </div>`;
 }
 
@@ -387,11 +864,11 @@ function teamRow(t, showProb = true) {
 // isn't): true draws the green winner badge, false leaves the slot blank,
 // undefined (R32, or any row with no winner concept) falls back to the
 // seed-code display.
-function resultTeamRow(t, score, isWinner) {
+function resultTeamRow(t, score, isWinner, rightLabel = null, prob = null) {
   if (!t || !t.team) {
     return `<div class="result-team">
       <span class="name" style="color:#9aa0ad">${t?.label || tr("tbd")}</span>
-      <span class="result-right muted">${t?.seed || ""}</span>
+      <span class="result-right muted">${t?.seed ?? ""}</span>
     </div>`;
   }
   let right;
@@ -401,22 +878,32 @@ function resultTeamRow(t, score, isWinner) {
     right = `<span class="winner-badge">W</span>`;
   } else if (isWinner === false) {
     right = "";
+  } else if (prob != null && prob > 0) {
+    const { pct, cls } = advanceProbPill(prob);
+    right = `<span class="team-prob-pill ${cls}">${pct}%</span>`;
   } else {
-    right = `<span class="result-right muted">${t.seed}</span>`;
+    const label = rightLabel ?? t.seed ?? "";
+    right = label ? `<span class="result-right muted">${label}</span>` : "";
   }
-  return `<div class="result-team">
+  return `<div class="result-team${isWinner === false ? " loser" : ""}">
     ${flagImg(t.team)}
     <span class="name">${tn(t.team)}</span>
     ${right}
   </div>`;
 }
-function resultCard(num, home, away, { homeScore = null, awayScore = null, homeIsWinner, awayIsWinner, extraClass = "", style = "", attrs = "" } = {}) {
+function resultCard(num, home, away, { homeScore = null, awayScore = null, homeIsWinner, awayIsWinner, extraClass = "", style = "", attrs = "", homeLabel = null, awayLabel = null, homeProb = null, awayProb = null, showOddsBadge = true, decidedByPen = false, penHome = null, penAway = null } = {}) {
+  const badge = showOddsBadge && home?.team && away?.team ? oddsBadgeHtml(home.team, away.team) : "";
+  const penNote = decidedByPen
+    ? `<div class="tie-pen-note">AET${penHome != null && penAway != null ? ` · PEN ${penHome}–${penAway}` : ""}</div>`
+    : "";
   return `<div class="tie-card result-card${extraClass ? " " + extraClass : ""}" style="${style}" ${attrs}>
     <span class="result-num">${num}</span>
     <div class="result-rows">
-      ${resultTeamRow(home, homeScore, homeIsWinner)}
-      ${resultTeamRow(away, awayScore, awayIsWinner)}
+      ${resultTeamRow(home, homeScore, homeIsWinner, homeLabel, homeProb)}
+      ${resultTeamRow(away, awayScore, awayIsWinner, awayLabel, awayProb)}
     </div>
+    ${penNote}
+    ${badge ? `<div class="result-card-odds">${badge}</div>` : ""}
   </div>`;
 }
 
@@ -454,12 +941,26 @@ const KNOCKOUT_KICKOFFS = {
   103: "2026-07-18T21:00Z", 104: "2026-07-19T19:00Z",
 };
 
-// A greyed-out version of resultCard for a slot whose two teams aren't
-// determined yet: same shell, a real header (match number + real kickoff
-// date), and one row per feeder showing "W<match>" (or "L<match>" for the
-// Bronze Final's loser-feeders) instead of a flag, since there's no team
-// to show one for yet.
-function tbdResultCard(num, style = "") {
+function tbdResultCard(num, style = "", attrs = "") {
+  const [a, b] = KNOCKOUT_FEEDERS[num] || [];
+  const prefix = num === 103 ? "L" : "W";
+  return bracketTieCard(num, null, null, {
+    style, attrs, extraClass: "later-round",
+    homeFeeder: a, awayFeeder: b, feederPrefix: prefix,
+  });
+}
+
+function laterRoundCard(num, m, style = "", extraClass = "", extraAttrs = "") {
+  const [f1, f2] = KNOCKOUT_FEEDERS[num] || [];
+  const prefix = num === 103 ? "L" : "W";
+  return bracketTieCard(num, m?.home, m?.away, {
+    style, attrs: extraAttrs,
+    extraClass: "later-round" + (extraClass ? " " + extraClass : ""),
+    homeFeeder: f1, awayFeeder: f2, feederPrefix: prefix,
+  });
+}
+
+function labTbdCard(num, style = "") {
   const [a, b] = KNOCKOUT_FEEDERS[num] || [];
   const prefix = num === 103 ? "L" : "W";
   const row = (src) => `<div class="tbd-team">
@@ -467,7 +968,7 @@ function tbdResultCard(num, style = "") {
     <span class="flag-placeholder">?</span>
     <span class="name">${tr("tbd")}</span>
   </div>`;
-  return `<div class="tie-card tbd-card later-round" style="${style}">
+  return `<div class="tie-card tbd-card later-round lab-card" data-match-num="${num}" data-number="${num}" style="${style}">
     <div class="tie-top">
       <span class="match-num">${num}</span>
       <span class="match-date">${formatKickoff(KNOCKOUT_KICKOFFS[num])}</span>
@@ -476,18 +977,16 @@ function tbdResultCard(num, style = "") {
   </div>`;
 }
 
-// Match numbers per slot, in top-to-bottom row order — NOT plain sequential
-// counting from each round's first number. R16 in particular skips around
-// (89,90, then 93,94 before 91,92) because match 93 (winner of 83 v 84)
-// feeds the same QF as match 89/90's winners' QF opponent slot, per real
-// FIFA pairing — see engine.py's BRACKET_TREE_ORDER for the full derivation.
-// QF/SF/Final happen to still be sequential once R32 is ordered correctly.
-const PLACEHOLDER_ROUNDS = [
-  { round: 2, title: tr("round_r16"), numbers: [89, 90, 93, 94, 91, 92, 95, 96] },
-  { round: 3, title: tr("round_qf"), numbers: [97, 98, 99, 100] },
-  { round: 4, title: tr("round_sf"), numbers: [101, 102] },
-  { round: 5, title: tr("round_final"), numbers: [104] },
-];
+// Mirrored bracket layout — 9 columns, 8 data rows:
+// Col 1: Left R32 (r32[0-7])   Col 9: Right R32 (r32[8-15])
+// Col 2: Left R16 (89,90,93,94) Col 8: Right R16 (91,92,95,96)
+// Col 3: Left QF  (97,98)       Col 7: Right QF  (99,100)
+// Col 4: Left SF  (101)         Col 6: Right SF  (102)
+//                 Col 5: Final (104) + Bronze (103)
+
+function drawBracketConnectors(_gridId) { /* connectors removed */ }
+
+
 
 // gridId/spinnerId let this render into either the actual-tab bracket or
 // the predicted-tab bracket. trackChanges (the "just updated" pulse) and
@@ -499,7 +998,7 @@ const PLACEHOLDER_ROUNDS = [
 // actual tab's probability-pill layout - on by default exactly when showProb
 // is off, since today that's the same tab, but kept as its own flag since
 // "no probabilities" and "seed/score layout" are independent decisions.
-function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, showProb = true, resultStyle = !showProb } = {}) {
+function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, showProb = true, resultStyle = !showProb, showOddsElo = false } = {}) {
   const grid = document.getElementById(gridId);
   const spinner = document.getElementById(spinnerId);
   if (!bracket || bracket.length === 0) return;
@@ -511,86 +1010,193 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
   spinner.style.display = "none";
   grid.style.display = "grid";
 
-  // bracket is always the 16 R32 matches, optionally followed by the
-  // R16-through-Bronze-Final projection (predicted tab only - see
-  // engine.compute_predicted_state). The actual tab's bracket never grows
-  // past 16, so laterByNumber stays empty there and every later-round slot
-  // below falls back to the plain TBD placeholder, unchanged.
   const r32 = bracket.slice(0, 16);
   const laterByNumber = {};
   bracket.slice(16).forEach(m => { laterByNumber[m.match_number] = m; });
 
-  let html = `<div class="round-title" style="grid-column:1">${tr("round_r32")}</div>`;
-  html += r32.map((m, i) => {
-    const isUpdated = trackChanges && updatedSlots.has(m.slot);
-    if (resultStyle) {
-      return resultCard(m.match_number ?? i + 73, m.home, m.away, { style: `grid-row:${i + 2}` });
+  const leftR32 = r32.slice(0, 8);
+  const rightR32 = r32.slice(8, 16);
+
+  // Teams confirmed as actual knockout winners (won at least one R32+ match).
+  // Used to gate real h2h odds on projected later-round slots — bookmakers
+  // offer speculative fixtures (Spain vs Portugal QF) before either team has
+  // qualified, and we must not use those future-market odds for projection.
+  const confirmedWinners = new Set(
+    allKnockoutMatches.filter(m => m.winner && m.status === "ft").map(m => m.winner)
+  );
+
+  // Win probability for each team: real h2h odds first (de-vigged, p_draw=0
+  // to confirm knockout 2-way market), then tournament outright ratio. No ELO.
+  // requireBothConfirmed: only use real h2h odds when both teams have actually
+  // won their preceding knockout match (prevents speculative fixture usage).
+  const matchProb = (m, { requireBothConfirmed = false } = {}) => {
+    if (!showOddsElo || !m?.home?.team || !m?.away?.team) return { h: null, a: null };
+    const key = [m.home.team, m.away.team].sort().join("|");
+    const entry = cachedState.real_odds?.[key];
+    // Only use entries where p_draw ≈ 0 — those are knockout 2-way h2h odds.
+    // Group-stage 3-way entries (p_draw > 0) are irrelevant for knockout
+    // projections and must not leak into later-round cards.
+    const isKnockoutOdds = entry && (entry.p_draw ?? 1) < 0.01;
+    const bothConfirmed = !requireBothConfirmed ||
+      (confirmedWinners.has(m.home.team) && confirmedWinners.has(m.away.team));
+    if (isKnockoutOdds && bothConfirmed) {
+      const flip = entry.home !== m.home.team;
+      return { h: flip ? entry.p_away : entry.p_home, a: flip ? entry.p_home : entry.p_away };
     }
-    return `
-    <div class="tie-card${isUpdated ? " just-updated" : ""}" style="grid-row:${i + 2}">
-      <div class="tie-top">
-        <span class="match-num">${m.match_number ?? i + 73}</span>
-        <span class="match-date">${formatKickoff(m.kickoff)}</span>
-        ${isUpdated ? `<span class="updating-badge">🔴 ${tr("updating_badge")}</span>` : ''}
-      </div>
-      ${teamRow(m.home, showProb)}
-      ${teamRow(m.away, showProb)}
+    // Tournament outright odds: P(A beats B) ≈ p_A / (p_A + p_B)
+    const tp = cachedState.tournament_probs || {};
+    const tH = tp[m.home.team], tA = tp[m.away.team];
+    if (tH > 0 && tA > 0) {
+      const h = tH / (tH + tA), a = tA / (tH + tA);
+      return { h, a };
+    }
+    return { h: null, a: null };
+  };
+
+  if (resultStyle) _matchupModalData = {};
+
+  // Render a card for a later-round slot, with CSS grid positioning.
+  const renderSlot = (num, col, rowStart, rowSpan) => {
+    const style = `grid-column:${col};grid-row:${rowStart} / span ${rowSpan}`;
+    const m = laterByNumber[num];
+    if (resultStyle) _matchupModalData[num] = { kickoff: m?.kickoff ?? KNOCKOUT_KICKOFFS[num], home: m?.home ?? null, away: m?.away ?? null };
+    if (m && (m.home?.team || m.away?.team)) {
+      if (!m.home?.team || !m.away?.team) return laterRoundCard(num, m, style);
+      const slotLive = allKnockoutMatches.find(x => x.number === num);
+      const slotHW = slotLive?.winner ? (slotLive.winner === m.home?.team ? true : false) : undefined;
+      const slotAW = slotLive?.winner ? (slotLive.winner === m.away?.team ? true : false) : undefined;
+      const slotConfirmed = confirmedWinners.has(m.home.team) && confirmedWinners.has(m.away.team);
+      const slotProb = matchProb(m, { requireBothConfirmed: true });
+      if (resultStyle) return resultCard(num, m.home, m.away, { extraClass: "later-round", style, attrs: `data-match-num="${num}"`, homeProb: slotProb.h, awayProb: slotProb.a, homeIsWinner: slotHW, awayIsWinner: slotAW, homeScore: slotLive?.home_score ?? null, awayScore: slotLive?.away_score ?? null, showOddsBadge: slotConfirmed, decidedByPen: slotLive?.decided_by_pen ?? false, penHome: slotLive?.pen_home ?? null, penAway: slotLive?.pen_away ?? null });
+      return bracketTieCard(num, m.home, m.away, { style, extraClass: "later-round", showProb, homeIsLoser: slotAW === true, awayIsLoser: slotHW === true, decidedByPen: slotLive?.decided_by_pen ?? false, penHome: slotLive?.pen_home ?? null, penAway: slotLive?.pen_away ?? null });
+    }
+    return tbdResultCard(num, style);
+  };
+
+  // cardOnly renders a later-round card without grid positioning (for use inside roundGroup)
+  const cardOnly = (num) => {
+    const m = laterByNumber[num];
+    if (resultStyle) _matchupModalData[num] = { kickoff: m?.kickoff ?? KNOCKOUT_KICKOFFS[num], home: m?.home ?? null, away: m?.away ?? null };
+    if (m && (m.home?.team || m.away?.team)) {
+      if (!m.home?.team || !m.away?.team) return laterRoundCard(num, m);
+      const onlyLive = allKnockoutMatches.find(x => x.number === num);
+      const onlyHW = onlyLive?.winner ? (onlyLive.winner === m.home?.team ? true : false) : undefined;
+      const onlyAW = onlyLive?.winner ? (onlyLive.winner === m.away?.team ? true : false) : undefined;
+      const onlyConfirmed = confirmedWinners.has(m.home.team) && confirmedWinners.has(m.away.team);
+      const onlyProb = matchProb(m, { requireBothConfirmed: true });
+      if (resultStyle) return resultCard(num, m.home, m.away, { extraClass: "later-round", attrs: `data-match-num="${num}"`, homeProb: onlyProb.h, awayProb: onlyProb.a, homeIsWinner: onlyHW, awayIsWinner: onlyAW, homeScore: onlyLive?.home_score ?? null, awayScore: onlyLive?.away_score ?? null, showOddsBadge: onlyConfirmed, decidedByPen: onlyLive?.decided_by_pen ?? false, penHome: onlyLive?.pen_home ?? null, penAway: onlyLive?.pen_away ?? null });
+      return bracketTieCard(num, m.home, m.away, { extraClass: "later-round", showProb, homeIsLoser: onlyAW === true, awayIsLoser: onlyHW === true, decidedByPen: onlyLive?.decided_by_pen ?? false, penHome: onlyLive?.pen_home ?? null, penAway: onlyLive?.pen_away ?? null });
+    }
+    return tbdResultCard(num);
+  };
+
+  const roundGroup = (num, col, rowStart, label) =>
+    `<div class="bracket-int-group" style="grid-column:${col};grid-row:${rowStart} / span 2">
+      <div class="bracket-int-label">${label}</div>
+      ${cardOnly(num)}
     </div>`;
-  }).join("");
 
-  for (const r of PLACEHOLDER_ROUNDS) {
-    const groupSize = Math.pow(2, r.round - 1);
-    html += `<div class="round-title" style="grid-column:${r.round}">${r.title}</div>`;
+  let html = "";
 
-    const renderSlot = (num, rowStyle) => {
-      const m = laterByNumber[num];
-      const gridStyle = `grid-column:${r.round};${rowStyle}`;
-      if (m && (m.home?.team || m.away?.team)) {
-        if (resultStyle) {
-          return resultCard(num, m.home, m.away, { extraClass: "later-round", style: gridStyle });
-        }
-        return `<div class="tie-card later-round" style="${gridStyle}">
-          <div class="tie-top"><span class="match-num">${num}</span></div>
-          ${teamRow(m.home, showProb)}
-          ${teamRow(m.away, showProb)}
-        </div>`;
-      }
-      return tbdResultCard(num, gridStyle);
-    };
+  // Round titles (row 1) — only R32 and R16 columns
+  [[1, tr("round_r32")], [2, tr("round_r16")],
+   [6, tr("round_r16")], [7, tr("round_r32")]
+  ].forEach(([col, label]) => {
+    html += `<div class="round-title" style="grid-column:${col};grid-row:1">${label}</div>`;
+  });
 
-    if (r.round === 4) {
-      // Semifinals: shrink each card by one row to open a gap right in the
-      // middle of the column for the Bronze Final (3rd place) — it isn't
-      // fed by anything above it in the tree, so unlike every other slot
-      // here, it doesn't need to line up with a feeder match.
-      const sfSpan = groupSize - 1;
-      r.numbers.forEach((num, idx) => {
-        const rowStart = idx * groupSize + 2 + (idx === 1 ? 1 : 0);
-        html += renderSlot(num, `grid-row:${rowStart} / span ${sfSpan}`);
+  // Left R32: col 1, rows 2-9
+  leftR32.forEach((m, i) => {
+    const isUpdated = trackChanges && updatedSlots.has(m.slot);
+    const num = m.match_number ?? i + 73;
+    const style = `grid-column:1;grid-row:${i + 2}`;
+    const liveM = allKnockoutMatches.find(x => x.number === num);
+    const hIsWinner = liveM?.winner ? (liveM.winner === m.home?.team ? true : false) : undefined;
+    const aIsWinner = liveM?.winner ? (liveM.winner === m.away?.team ? true : false) : undefined;
+    if (resultStyle) _matchupModalData[num] = { kickoff: m.kickoff, home: m.home, away: m.away };
+    if (resultStyle) {
+      const r32Prob = matchProb(m);
+      html += resultCard(num, m.home, m.away, { style, attrs: `data-match-num="${num}"`, homeProb: r32Prob.h, awayProb: r32Prob.a, homeIsWinner: hIsWinner, awayIsWinner: aIsWinner, homeScore: liveM?.home_score ?? null, awayScore: liveM?.away_score ?? null, decidedByPen: liveM?.decided_by_pen ?? false, penHome: liveM?.pen_home ?? null, penAway: liveM?.pen_away ?? null });
+    } else {
+      html += bracketTieCard(num, m.home, m.away, {
+        style, kickoff: m.kickoff, showProb,
+        homeScore: liveM?.home_score ?? null,
+        awayScore: liveM?.away_score ?? null,
+        homeIsLoser: aIsWinner === true,
+        awayIsLoser: hIsWinner === true,
+        isUpdated, showOddsBadge: true,
+        decidedByPen: liveM?.decided_by_pen ?? false,
+        penHome: liveM?.pen_home ?? null,
+        penAway: liveM?.pen_away ?? null,
       });
-      html += renderSlot(103, `grid-row:${groupSize + 1} / span 2`);
-      continue;
     }
+  });
 
-    r.numbers.forEach((num, idx) => {
-      const rowStart = idx * groupSize + 2;
-      html += renderSlot(num, `grid-row:${rowStart} / span ${groupSize}`);
-    });
-  }
+  // Right R32: col 7, rows 2-9
+  rightR32.forEach((m, i) => {
+    const isUpdated = trackChanges && updatedSlots.has(m.slot);
+    const num = m.match_number ?? i + 81;
+    const style = `grid-column:7;grid-row:${i + 2}`;
+    const liveM = allKnockoutMatches.find(x => x.number === num);
+    const hIsWinner = liveM?.winner ? (liveM.winner === m.home?.team ? true : false) : undefined;
+    const aIsWinner = liveM?.winner ? (liveM.winner === m.away?.team ? true : false) : undefined;
+    if (resultStyle) _matchupModalData[num] = { kickoff: m.kickoff, home: m.home, away: m.away };
+    if (resultStyle) {
+      const r32Prob = matchProb(m);
+      html += resultCard(num, m.home, m.away, { style, attrs: `data-match-num="${num}"`, homeProb: r32Prob.h, awayProb: r32Prob.a, homeIsWinner: hIsWinner, awayIsWinner: aIsWinner, homeScore: liveM?.home_score ?? null, awayScore: liveM?.away_score ?? null, decidedByPen: liveM?.decided_by_pen ?? false, penHome: liveM?.pen_home ?? null, penAway: liveM?.pen_away ?? null });
+    } else {
+      html += bracketTieCard(num, m.home, m.away, {
+        style, kickoff: m.kickoff, showProb,
+        homeScore: liveM?.home_score ?? null,
+        awayScore: liveM?.away_score ?? null,
+        homeIsLoser: aIsWinner === true,
+        awayIsLoser: hIsWinner === true,
+        isUpdated, showOddsBadge: true,
+        decidedByPen: liveM?.decided_by_pen ?? false,
+        penHome: liveM?.pen_home ?? null,
+        penAway: liveM?.pen_away ?? null,
+      });
+    }
+  });
+
+  // Left R16: col 2, rows 2-3 / 4-5 / 6-7 / 8-9
+  [89, 90, 93, 94].forEach((num, i) => { html += renderSlot(num, 2, i * 2 + 2, 2); });
+
+  // Left QF+SF: col 3 (integrated groups — QF top, SF middle, QF bottom)
+  html += roundGroup(97,  3, 3, `${tr("round_qf_abbr")} 1`);
+  html += roundGroup(101, 3, 5, `${tr("round_sf_abbr")} 1`);
+  html += roundGroup(98,  3, 7, `${tr("round_qf_abbr")} 2`);
+
+  // Center: col 4 — Final and Bronze
+  html += roundGroup(104, 4, 4, tr("round_final"));
+  html += roundGroup(103, 4, 6, tr("round_bronze_singular"));
+
+  // Right QF+SF: col 5 (integrated groups)
+  html += roundGroup(99,  5, 3, `${tr("round_qf_abbr")} 3`);
+  html += roundGroup(102, 5, 5, `${tr("round_sf_abbr")} 2`);
+  html += roundGroup(100, 5, 7, `${tr("round_qf_abbr")} 4`);
+
+  // Right R16: col 6, rows 2-3 / 4-5 / 6-7 / 8-9
+  [91, 92, 95, 96].forEach((num, i) => { html += renderSlot(num, 6, i * 2 + 2, 2); });
 
   grid.innerHTML = html;
+  wireOddsBadges(grid);
 }
 
 function renderBracket(bracket) {
   renderBracketInto(bracket, "bracket-grid", "bracket-spinner", { trackChanges: true, showProb: true });
 }
 function renderPredictedBracket(bracket) {
-  renderBracketInto(bracket, "predicted-bracket-grid", "predicted-bracket-spinner", { trackChanges: false, showProb: false });
+  renderBracketInto(bracket, "predicted-bracket-grid", "predicted-bracket-spinner", { trackChanges: false, showProb: false, showOddsElo: true });
 }
 
 // "prob" is always P(advance to R32) now, regardless of current position.
 function advanceProbPill(prob) {
-  const pct = Math.round((prob || 0) * 100);
+  // Only show "100%" when advance is mathematically certain (prob === 1.0).
+  // Math.round would otherwise display 99.9% as "100%", which misleads users
+  // comparing against FIFA's site (which only marks teams as qualified when
+  // it's truly guaranteed, not just very likely).
+  const pct = prob >= 1 ? 100 : Math.min(99, Math.round((prob || 0) * 100));
   let cls;
   if (pct >= 100) cls = "tier-green";
   else if (pct >= 75) cls = "tier-yellow";
@@ -689,6 +1295,9 @@ function renderStandings(standings, liveMatches) {
 // compute_predicted_state docstring for why this is rank-only by design,
 // not a missing feature.
 function renderPredictedStandings(standings) {
+  const section = document.getElementById("predicted-standings-section");
+  if (isGroupStageSettled()) { if (section) section.style.display = "none"; return; }
+  if (section) section.style.display = "";
   const grid = document.getElementById("predicted-standings-grid");
   if (!standings || Object.keys(standings).length === 0) return;
 
@@ -711,6 +1320,12 @@ function renderPredictedStandings(standings) {
   }).join("");
 }
 
+function isGroupStageSettled() {
+  const s = cachedState.standings;
+  if (!s || Object.keys(s).length < 12) return false;
+  return Object.values(s).every(g => g.length > 0 && g.every(t => t.played >= 3));
+}
+
 // ── THIRDS RACE ───────────────────────────────────────────────────────────────
 function renderThirds(thirds) {
   const section = document.getElementById("thirds-section");
@@ -725,32 +1340,53 @@ function renderThirds(thirds) {
   const rows = thirds.map((t) => {
     const badgeCls = t.qualifies ? "qualify" : "eliminated";
     const { pct: probPct, cls: probCls, checkmark } = advanceProbPill(t.prob);
+    const gd = t.goal_diff >= 0 ? `+${t.goal_diff}` : `${t.goal_diff}`;
+    const tcs = t.fair_play ?? 0;
+    const tcsStyle = tcs > 0 ? "color:#c2410c" : "color:var(--muted)";
     return `<div class="standings-row">
       <div class="pos-badge ${badgeCls}">${t.rank}</div>
       <div class="standings-team">
         ${flagImg(t.name)}
         <span class="name">${tn(t.name)}</span>
       </div>
-      <div class="standings-col">${t.played}</div>
-      <div class="standings-col">${t.goal_diff >= 0 ? "+" : ""}${t.goal_diff}</div>
+      <div class="standings-col" style="width:22px;color:var(--muted);font-weight:700">${t.group}</div>
+      <div class="standings-col" style="width:22px">${t.won}</div>
+      <div class="standings-col" style="width:22px">${t.drawn}</div>
+      <div class="standings-col" style="width:22px">${t.lost}</div>
+      <div class="standings-col" style="width:26px">${t.goals_for}</div>
+      <div class="standings-col" style="width:26px">${t.goals_against}</div>
+      <div class="standings-col" style="width:26px">${gd}</div>
+      <div class="standings-col" style="width:26px;${tcsStyle}">${tcs}</div>
       <div class="standings-col">${t.points}</div>
       <div class="prob-pill ${probCls}">${checkmark}${probPct}%</div>
     </div>`;
   }).join("");
 
-  list.innerHTML = `<div class="group-card">
+  list.innerHTML = `<div style="overflow-x:auto"><div class="group-card" style="min-width:540px">
     <div class="group-head">
       <span class="gh-name">${tr("thirds_race")}</span>
-      <span class="gh-col">${tr("mp")}</span><span class="gh-col">${tr("gd")}</span><span class="gh-col">${tr("pts")}</span><span class="gh-col prob">${tr("prob")}</span>
+      <span class="gh-col" style="width:22px">${tr("col_grp")}</span>
+      <span class="gh-col" style="width:22px">${tr("col_w")}</span>
+      <span class="gh-col" style="width:22px">${tr("col_d")}</span>
+      <span class="gh-col" style="width:22px">${tr("col_l")}</span>
+      <span class="gh-col" style="width:26px">${tr("col_gf")}</span>
+      <span class="gh-col" style="width:26px">${tr("col_ga")}</span>
+      <span class="gh-col" style="width:26px">${tr("gd")}</span>
+      <span class="gh-col" style="width:26px">${tr("col_tcs")}</span>
+      <span class="gh-col">${tr("pts")}</span>
+      <span class="gh-col prob">${tr("prob")}</span>
     </div>
     ${rows}
-  </div>`;
+  </div></div>`;
 }
 
 // Same cross-group ranking as renderThirds(), but rank + group letter +
 // flag + name only — no Pld/GD/Pts/prob, same reasoning as the predicted
 // standings table (see engine.compute_predicted_state's docstring).
 function renderPredictedThirds(thirds) {
+  const section = document.getElementById("predicted-thirds-section");
+  if (isGroupStageSettled()) { if (section) section.style.display = "none"; return; }
+  if (section) section.style.display = "";
   const list = document.getElementById("predicted-thirds-list");
   if (!thirds || thirds.length === 0) return;
 
@@ -1522,69 +2158,80 @@ function relabelSeed(entry, prefix, srcNumber) {
   return { ...entry, seed: `${prefix}${srcNumber}` };
 }
 
-function labProjectOneMatch(homeEntry, awayEntry, matchNumber) {
-  if (!homeEntry?.team || !awayEntry?.team) {
-    return {
-      match_number: matchNumber,
-      home: homeEntry || LAB_TBD_ENTRY,
-      away: awayEntry || LAB_TBD_ENTRY,
-      winner: null, loser: null,
-    };
+function labProjectOneMatch(homeEntry, awayEntry, matchNumber, actualByNum = {}) {
+  const home = homeEntry?.team ? homeEntry : LAB_TBD_ENTRY;
+  const away = awayEntry?.team ? awayEntry : LAB_TBD_ENTRY;
+  if (!home.team || !away.team) {
+    return { match_number: matchNumber, home, away, winner: null, loser: null };
   }
-  const pHome = labKnockoutWinProb(homeEntry.team, awayEntry.team);
-  const homeOut = labAdvanceEntry(homeEntry, pHome);
-  const awayOut = labAdvanceEntry(awayEntry, 1 - pHome);
-
-  // Who plays whom next is a fixed lookup (BRACKET_TREE_ORDER) - no
-  // probability involved. Win probability is only the fallback for matches
-  // the user hasn't explicitly scored; an explicit pick always wins out.
+  // User pick takes priority
   const override = labLaterOverrides[matchNumber];
-  let winner, loser;
-  if (override && override.winner) {
-    winner = override.winner === homeEntry.team ? homeOut : awayOut;
-    loser = override.winner === homeEntry.team ? awayOut : homeOut;
-  } else {
-    winner = pHome >= 0.5 ? homeOut : awayOut;
-    loser = pHome >= 0.5 ? awayOut : homeOut;
+  if (override?.winner) {
+    const winner = override.winner === home.team ? home : away;
+    const loser = winner === home ? away : home;
+    return { match_number: matchNumber, home, away, winner, loser };
   }
-  return { match_number: matchNumber, home: homeOut, away: awayOut, winner, loser };
+  // Actual completed result
+  const actual = actualByNum[matchNumber];
+  if (actual) {
+    const homeWins = actual.home_score > actual.away_score;
+    const homeIsActualHome = actual.home === home.team;
+    const winner = (homeWins === homeIsActualHome) ? home : away;
+    const loser = winner === home ? away : home;
+    return { match_number: matchNumber, home, away, winner, loser };
+  }
+  // Not yet decided — both teams known but no result or pick
+  return { match_number: matchNumber, home, away, winner: null, loser: null };
 }
 
-// Given the 16 R32 matches (labProjectBracket()'s output), projects a
-// single most-likely winner forward through R16, QF, SF, the Final, and
-// the Bronze final - reflecting whatever the user has edited/scored so
-// far, recomputed fresh on every render the same way the rest of the Lab
-// already is. Read-only (not independently click-to-edit yet).
+// Given the 16 R32 matches (labProjectBracket()'s output), builds R16 through
+// Final entries based solely on confirmed results (actual ft scores from live
+// data) and explicit user picks (labR32Overrides / labLaterOverrides).
+// No odds/Elo auto-prediction — a match only gets populated when a winner is
+// actually known.
 function labProjectKnockoutRounds(r32Matches) {
-  // An R32 match the user has explicitly scored (labR32Overrides) keeps its
-  // user-picked winner; everything else falls back to Elo/odds, same as a
-  // never-touched R32 matchup already does elsewhere in the Lab.
+  // Build a lookup of completed knockout match results from live data.
+  const actualByNum = {};
+  for (const m of allKnockoutMatches) {
+    if (m.status === "ft" && m.home_score != null && m.away_score != null) {
+      actualByNum[m.number] = m;
+    }
+  }
+
+  // Determine the winner of each R32 match: user pick → actual result → null.
   let current = r32Matches.map(m => {
     const h = m.home, a = m.away;
-    if (!h?.team || !a?.team) return h?.team ? h : a;
+    if (!h?.team || !a?.team) return null;
     const pick = labR32Overrides[m.slot];
-    if (pick && pick.winner) return pick.winner === h.team ? h : a;
-    const pHome = labKnockoutWinProb(h.team, a.team);
-    return pHome >= 0.5 ? h : a;
+    if (pick?.winner) return pick.winner === h.team ? h : a;
+    const actual = actualByNum[m.match_number];
+    if (actual) {
+      const homeWins = actual.home_score > actual.away_score;
+      const homeIsH = actual.home === h.team;
+      return (homeWins === homeIsH) ? h : a;
+    }
+    return null; // not yet decided
   });
-  // Parallel array: currentSrc[i] is the match number that produced current[i].
   let currentSrc = r32Matches.map(m => m.match_number);
 
   const out = [];
   const sfLosers = [];
   const sfLoserSrc = [];
+
   [LAB_R16_NUMBERS, LAB_QF_NUMBERS, LAB_SF_NUMBERS].forEach(roundNumbers => {
     const nextRound = [];
     const nextSrc = [];
     roundNumbers.forEach((number, i) => {
-      const home = relabelSeed(current[2 * i], "W", currentSrc[2 * i]);
-      const away = relabelSeed(current[2 * i + 1], "W", currentSrc[2 * i + 1]);
-      const match = labProjectOneMatch(home, away, number);
+      const homeW = current[2 * i], awayW = current[2 * i + 1];
+      const homeSrc = currentSrc[2 * i], awaySrc = currentSrc[2 * i + 1];
+      const home = homeW ? relabelSeed(homeW, "W", homeSrc) : { ...LAB_TBD_ENTRY, seed: `W${homeSrc}` };
+      const away = awayW ? relabelSeed(awayW, "W", awaySrc) : { ...LAB_TBD_ENTRY, seed: `W${awaySrc}` };
+      const match = labProjectOneMatch(home, away, number, actualByNum);
       out.push(match);
-      nextRound.push(match.winner || LAB_TBD_ENTRY);
+      nextRound.push(match.winner ?? null);
       nextSrc.push(number);
       if (roundNumbers === LAB_SF_NUMBERS) {
-        sfLosers.push(match.loser || LAB_TBD_ENTRY);
+        sfLosers.push(match.loser ?? null);
         sfLoserSrc.push(number);
       }
     });
@@ -1592,17 +2239,14 @@ function labProjectKnockoutRounds(r32Matches) {
     currentSrc = nextSrc;
   });
 
-  out.push(labProjectOneMatch(
-    relabelSeed(current[0], "W", currentSrc[0]),
-    relabelSeed(current[1], "W", currentSrc[1]),
-    LAB_FINAL_NUMBER,
-  ));
+  const finHome = current[0] ? relabelSeed(current[0], "W", currentSrc[0]) : { ...LAB_TBD_ENTRY, seed: `W${currentSrc[0]}` };
+  const finAway = current[1] ? relabelSeed(current[1], "W", currentSrc[1]) : { ...LAB_TBD_ENTRY, seed: `W${currentSrc[1]}` };
+  out.push(labProjectOneMatch(finHome, finAway, LAB_FINAL_NUMBER, actualByNum));
+
   if (sfLosers.length === 2) {
-    out.push(labProjectOneMatch(
-      relabelSeed(sfLosers[0], "L", sfLoserSrc[0]),
-      relabelSeed(sfLosers[1], "L", sfLoserSrc[1]),
-      LAB_BRONZE_NUMBER,
-    ));
+    const bronzeHome = sfLosers[0] ? relabelSeed(sfLosers[0], "L", sfLoserSrc[0]) : { ...LAB_TBD_ENTRY, seed: `L${sfLoserSrc[0]}` };
+    const bronzeAway = sfLosers[1] ? relabelSeed(sfLosers[1], "L", sfLoserSrc[1]) : { ...LAB_TBD_ENTRY, seed: `L${sfLoserSrc[1]}` };
+    out.push(labProjectOneMatch(bronzeHome, bronzeAway, LAB_BRONZE_NUMBER, actualByNum));
   }
   return out;
 }
@@ -1740,8 +2384,8 @@ function labComputeAndRender() {
   }
 
   renderLabBracket(bracket, laterRounds);
-  renderLabStandings(standings, labLastMovedTeams);
-  renderLabThirds(standings, labLastMovedTeams);
+  renderLabStandings(cachedState.standings || {}, new Set());
+  renderLabThirds(cachedState.standings || {}, new Set());
   renderLabNotices();
   updateLabBannerState();
   if (labOpenSlot) renderLabModal(labOpenSlot, bracket);
@@ -1767,64 +2411,144 @@ function renderLabBracket(bracket, laterRounds) {
   const grid = document.getElementById("lab-bracket-grid");
   const laterByNumber = {};
   (laterRounds || []).forEach(m => { laterByNumber[m.match_number] = m; });
-  let html = `<div class="round-title" style="grid-column:1">${tr("round_r32")}</div>`;
-  html += bracket.map((m, i) => {
+
+  const leftR32 = bracket.slice(0, 8);
+  const rightR32 = bracket.slice(8, 16);
+
+  const renderLaterSlot = (num, col, rowStart, rowSpan) => {
+    const style = `grid-column:${col};grid-row:${rowStart} / span ${rowSpan}`;
+    const m = laterByNumber[num];
+    if (m && (m.home?.team || m.away?.team)) {
+      if (!m.home?.team || !m.away?.team) {
+        return laterRoundCard(num, m, style, "lab-card", `data-number="${num}"`);
+      }
+      const pick = labLaterOverrides[num];
+      const actualM = allKnockoutMatches.find(x => x.number === num);
+      const homeScore = pick ? pick.home_score : (actualM?.home_score ?? null);
+      const awayScore = pick ? pick.away_score : (actualM?.away_score ?? null);
+      const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
+      const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
+      const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
+      return resultCard(num, m.home, m.away, {
+        homeScore, awayScore, homeIsWinner, awayIsWinner,
+        extraClass: `lab-card later-round${pick ? " lab-picked" : ""}`,
+        style,
+        attrs: `data-number="${num}" data-match-num="${num}"`,
+      });
+    }
+    return labTbdCard(num, style);
+  };
+
+  const labCardOnly = (num) => {
+    const m = laterByNumber[num];
+    if (m && (m.home?.team || m.away?.team)) {
+      if (!m.home?.team || !m.away?.team) {
+        return laterRoundCard(num, m, "", "lab-card", `data-number="${num}"`);
+      }
+      const pick = labLaterOverrides[num];
+      const actualM = allKnockoutMatches.find(x => x.number === num);
+      const homeScore = pick ? pick.home_score : (actualM?.home_score ?? null);
+      const awayScore = pick ? pick.away_score : (actualM?.away_score ?? null);
+      const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
+      const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
+      const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
+      return resultCard(num, m.home, m.away, {
+        homeScore, awayScore, homeIsWinner, awayIsWinner,
+        extraClass: `lab-card later-round${pick ? " lab-picked" : ""}`,
+        attrs: `data-number="${num}" data-match-num="${num}"`,
+      });
+    }
+    return labTbdCard(num);
+  };
+
+  const labRoundGroup = (num, col, rowStart, label) =>
+    `<div class="bracket-int-group" style="grid-column:${col};grid-row:${rowStart} / span 2">
+      <div class="bracket-int-label">${label}</div>
+      ${labCardOnly(num)}
+    </div>`;
+
+  let html = "";
+
+  // Round titles (row 1) — only R32 and R16 columns
+  [[1, tr("round_r32")], [2, tr("round_r16")],
+   [6, tr("round_r16")], [7, tr("round_r32")]
+  ].forEach(([col, label]) => {
+    html += `<div class="round-title" style="grid-column:${col};grid-row:1">${label}</div>`;
+  });
+
+  // Left R32: col 1, rows 2-9
+  html += leftR32.map((m, i) => {
     const prev = labPrevBracketBySlot[m.slot];
     const changed = prev && (prev.home?.team !== m.home?.team || prev.away?.team !== m.away?.team);
     labPrevBracketBySlot[m.slot] = m;
-
     const pick = labR32Overrides[m.slot];
+    const actualM = allKnockoutMatches.find(x => x.number === m.match_number);
+    const homeScore = pick ? pick.home_score : (actualM?.home_score ?? null);
+    const awayScore = pick ? pick.away_score : (actualM?.away_score ?? null);
+    const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
+    const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
+    const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
     return resultCard(m.match_number, m.home, m.away, {
-      homeScore: pick ? pick.home_score : null,
-      awayScore: pick ? pick.away_score : null,
+      homeScore, awayScore, homeIsWinner, awayIsWinner,
       extraClass: `lab-card${changed ? " lab-flash" : ""}${pick ? " lab-picked" : ""}`,
-      style: `grid-row:${i + 2}`,
-      attrs: `data-slot="${m.slot}"`,
+      style: `grid-column:1;grid-row:${i + 2}`,
+      attrs: `data-slot="${m.slot}" data-match-num="${m.match_number ?? i + 73}"`,
     });
   }).join("");
 
-  for (const r of PLACEHOLDER_ROUNDS) {
-    const groupSize = Math.pow(2, r.round - 1);
-    html += `<div class="round-title" style="grid-column:${r.round}">${r.title}</div>`;
-
-    const renderLaterSlot = (num, rowStyle) => {
-      const m = laterByNumber[num];
-      if (m && (m.home?.team || m.away?.team)) {
-        const pick = labLaterOverrides[num];
-        return resultCard(num, m.home, m.away, {
-          homeScore: pick ? pick.home_score : null,
-          awayScore: pick ? pick.away_score : null,
-          homeIsWinner: m.winner ? m.winner.team === m.home.team : undefined,
-          awayIsWinner: m.winner ? m.winner.team === m.away.team : undefined,
-          extraClass: `lab-card later-round${pick ? " lab-picked" : ""}`,
-          style: `grid-column:${r.round};${rowStyle}`,
-          attrs: `data-number="${num}"`,
-        });
-      }
-      return `<div class="lab-tbd" style="grid-column:${r.round};${rowStyle}">${num}</div>`;
-    };
-
-    if (r.round === 4) {
-      const sfSpan = groupSize - 1;
-      r.numbers.forEach((num, idx) => {
-        const rowStart = idx * groupSize + 2 + (idx === 1 ? 1 : 0);
-        html += renderLaterSlot(num, `grid-row:${rowStart} / span ${sfSpan}`);
-      });
-      html += renderLaterSlot(103, `grid-row:${groupSize + 1} / span 2`);
-      continue;
-    }
-    r.numbers.forEach((num, idx) => {
-      const rowStart = idx * groupSize + 2;
-      html += renderLaterSlot(num, `grid-row:${rowStart} / span ${groupSize}`);
+  // Right R32: col 7, rows 2-9
+  html += rightR32.map((m, i) => {
+    const prev = labPrevBracketBySlot[m.slot];
+    const changed = prev && (prev.home?.team !== m.home?.team || prev.away?.team !== m.away?.team);
+    labPrevBracketBySlot[m.slot] = m;
+    const pick = labR32Overrides[m.slot];
+    const actualM = allKnockoutMatches.find(x => x.number === m.match_number);
+    const homeScore = pick ? pick.home_score : (actualM?.home_score ?? null);
+    const awayScore = pick ? pick.away_score : (actualM?.away_score ?? null);
+    const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
+    const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
+    const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
+    return resultCard(m.match_number, m.home, m.away, {
+      homeScore, awayScore, homeIsWinner, awayIsWinner,
+      extraClass: `lab-card${changed ? " lab-flash" : ""}${pick ? " lab-picked" : ""}`,
+      style: `grid-column:7;grid-row:${i + 2}`,
+      attrs: `data-slot="${m.slot}" data-match-num="${m.match_number ?? i + 81}"`,
     });
-  }
+  }).join("");
+
+  // Left R16: col 2
+  [89, 90, 93, 94].forEach((num, i) => { html += renderLaterSlot(num, 2, i * 2 + 2, 2); });
+
+  // Left QF+SF: col 3 (integrated groups)
+  html += labRoundGroup(97,  3, 3, `${tr("round_qf_abbr")} 1`);
+  html += labRoundGroup(101, 3, 5, `${tr("round_sf_abbr")} 1`);
+  html += labRoundGroup(98,  3, 7, `${tr("round_qf_abbr")} 2`);
+
+  // Center: col 4 — Final and Bronze
+  html += labRoundGroup(104, 4, 4, tr("round_final"));
+  html += labRoundGroup(103, 4, 6, tr("round_bronze_singular"));
+
+  // Right QF+SF: col 5 (integrated groups)
+  html += labRoundGroup(99,  5, 3, `${tr("round_qf_abbr")} 3`);
+  html += labRoundGroup(102, 5, 5, `${tr("round_sf_abbr")} 2`);
+  html += labRoundGroup(100, 5, 7, `${tr("round_qf_abbr")} 4`);
+
+  // Right R16: col 6
+  [91, 92, 95, 96].forEach((num, i) => { html += renderLaterSlot(num, 6, i * 2 + 2, 2); });
 
   grid.innerHTML = html;
   grid.querySelectorAll(".lab-card[data-slot]").forEach(card => {
     card.addEventListener("click", () => openLabModal(card.dataset.slot));
   });
+  wireOddsBadges(grid);
   grid.querySelectorAll(".lab-card[data-number]").forEach(card => {
-    card.addEventListener("click", () => openLabLaterModal(parseInt(card.dataset.number, 10)));
+    const num = parseInt(card.dataset.number, 10);
+    const concluded = allKnockoutMatches.find(m => m.number === num && m.status === "ft" && m.winner);
+    if (concluded) {
+      card.classList.add("lab-concluded");
+    } else {
+      card.addEventListener("click", () => openLabLaterModal(num));
+    }
   });
 }
 
@@ -1864,12 +2588,18 @@ function renderLabGroupTable(g, teams, movedTeams) {
 }
 
 function renderLabStandings(standings, movedTeams) {
+  const section = document.getElementById("lab-standings-section");
+  if (isGroupStageSettled()) { if (section) section.style.display = "none"; return; }
+  if (section) section.style.display = "";
   const grid = document.getElementById("lab-standings-grid");
   const groups = "ABCDEFGHIJKL".split("");
   grid.innerHTML = groups.map(g => renderLabGroupTable(g, standings[g] || [], movedTeams)).join("");
 }
 
 function renderLabThirds(standings, movedTeams) {
+  const section = document.getElementById("lab-thirds-section");
+  if (isGroupStageSettled()) { if (section) section.style.display = "none"; return; }
+  if (section) section.style.display = "";
   document.getElementById("lab-thirds-list").innerHTML = renderLabThirdsTable(standings, movedTeams);
 }
 
@@ -1934,6 +2664,13 @@ function openLabModal(slot) {
   labComputeAndRender();
 }
 function openLabLaterModal(matchNumber) {
+  // Concluded knockout matches (actual result from ESPN) are read-only —
+  // the real score is already locked in and the Lab uses it unconditionally.
+  const concluded = allKnockoutMatches.find(
+    m => m.number === matchNumber && m.status === "ft" && m.winner
+  );
+  if (concluded) return;
+
   labOpenLaterNumber = matchNumber;
   labOpenSlot = null;
   labModalSnapshot = snapshotLabOverrides();
@@ -2278,6 +3015,7 @@ function initLab() {
   labEloRatings = cachedState.elo_ratings || {};
   labRealOdds = cachedState.real_odds || {};
   labComputeAndRender();
+  updateFuturesBanner();
 }
 
 // ── LAST UPDATED ──────────────────────────────────────────────────────────────
@@ -2319,7 +3057,8 @@ function inProgressMatches(matches) {
 function renderAll() {
   if (!stateLoadedOnce || !liveLoadedOnce) return;
   const active = inProgressMatches(liveMatches);
-  renderTodayStrip(allMatches);
+  allKnockoutMatches = buildKnockoutStripEntries(); // built from cachedState.bracket + knockoutLiveData
+  renderTodayStrip(allMatches.concat(allKnockoutMatches));
   renderBracket(cachedState.bracket);
   renderStandings(applyLiveOverlay(cachedState.standings, active), active);
   renderThirds(cachedState.thirds_race);
@@ -2327,6 +3066,7 @@ function renderAll() {
   renderPredictedStandings(cachedState.predicted_standings);
   renderPredictedThirds(cachedState.predicted_thirds_race);
   renderLastUpdated(cachedState.last_updated);
+  updateFuturesBanner();
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
@@ -2370,6 +3110,25 @@ async function fetchLive() {
       liveMatches = data.live_matches || [];
       allMatches = data.all_matches || [];
 
+      // Merge knockout live data with bracket match numbers so the strip
+      // can show live clocks and scores during knockout matches. We match
+      // by home+away team names against cachedState.bracket.
+      const koRaw = data.knockout_matches || [];
+      if (koRaw.length && cachedState?.bracket) {
+        const bracketByTeams = {};
+        for (const m of cachedState.bracket) {
+          if (m.home?.team && m.away?.team)
+            bracketByTeams[`${m.home.team}|${m.away.team}`] = m;
+        }
+        // koRaw entries don't have match numbers yet — fill them in from bracket
+        for (const m of koRaw) {
+          const bm = bracketByTeams[`${m.home}|${m.away}`];
+          if (bm) m.number = bm.match_number;
+        }
+      }
+      // Store raw data for buildKnockoutStripEntries() to pick up in renderAll()
+      knockoutLiveData = koRaw.filter(m => m.number);
+
       const now = Date.now();
       for (const m of liveMatches) {
         liveTickers[matchKey(m)] = {
@@ -2397,6 +3156,7 @@ async function fetchLive() {
 
 fetchState();
 fetchLive();
+fetchVisitorGeo();
 setInterval(fetchState, 60000);
 setInterval(tickTodayStatuses, 1000); // local clock tick, no fetch, no DOM rebuild
 setInterval(() => renderLastUpdated(cachedState.last_updated), 30000);
@@ -2425,12 +3185,36 @@ function refreshNow() {
 }
 document.getElementById("refresh-btn").addEventListener("click", refreshNow);
 
+// ── GOOGLE ANALYTICS (Consent Mode v2) ───────────────────────────────────────
+const GA_MEASUREMENT_ID = "G-BJT7WH328K";
+window.dataLayer = window.dataLayer || [];
+window.gtag = function () { window.dataLayer.push(arguments); };
+
+// Default: deny cookies until the user explicitly accepts.
+// GA still fires in cookieless/modeled mode so the tag validates and
+// Google can model aggregate data — but no cookies are set before consent.
+window.gtag("consent", "default", {
+  analytics_storage: "denied",
+  ad_storage: "denied",
+  wait_for_update: 500,
+});
+window.gtag("js", new Date());
+window.gtag("config", GA_MEASUREMENT_ID);
+
+const script = document.createElement("script");
+script.async = true;
+script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
+document.head.appendChild(script);
+
 // ── COOKIE CONSENT ────────────────────────────────────────────────────────────
 const COOKIE_CONSENT_KEY = "cookieConsent";
-if (!localStorage.getItem(COOKIE_CONSENT_KEY)) {
+if (localStorage.getItem(COOKIE_CONSENT_KEY) === "accepted") {
+  window.gtag("consent", "update", { analytics_storage: "granted" });
+} else {
   document.getElementById("cookie-banner").style.display = "flex";
 }
 document.getElementById("cookie-accept-btn").addEventListener("click", () => {
   localStorage.setItem(COOKIE_CONSENT_KEY, "accepted");
   document.getElementById("cookie-banner").style.display = "none";
+  window.gtag("consent", "update", { analytics_storage: "granted" });
 });

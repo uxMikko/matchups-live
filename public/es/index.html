@@ -117,6 +117,16 @@
       <div class="bracket-tree-wrap">
         <div id="lab-bracket-grid" class="bracket-tree lab-tree"></div>
       </div>
+      <div id="futures-bet-banner" class="futures-bet-banner" style="display:none">
+        <div class="futures-bet-text"><strong>¿Te gusta tu bracket?</strong> Respáldalo con una apuesta a futuro sobre el campeón del torneo.</div>
+        <div class="futures-bet-actions">
+          <button type="button" class="futures-bet-btn" data-bookie="unibet">Apostar en Unibet</button>
+          <button type="button" class="futures-bet-btn" data-bookie="betsson">Apostar en Betsson</button>
+        </div>
+        <div class="futures-bet-disclosure">
+          Publicidad — matchups.live puede recibir una comisión si te registras a través de estos enlaces, sin costo adicional para ti. Solo para mayores de 18 años. Por favor, juega con responsabilidad — <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a>.
+        </div>
+      </div>
     </div>
 
     <!-- LAB GROUP STANDINGS -->
@@ -172,6 +182,33 @@
 <div id="cookie-banner" class="cookie-banner" style="display:none">
   <span class="cookie-text">Este sitio usa cookies para recordar tus preferencias y mejorar tu experiencia.</span>
   <button type="button" id="cookie-accept-btn" class="cookie-accept-btn">Aceptar</button>
+</div>
+
+<!-- Shown once per browser, before any odds figures or bookmaker names
+     ever render - see bettingAgeConfirmed() in app.js. -->
+<div id="age-gate-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="age-gate-modal">
+    <div class="age-gate-title">Cuotas de apuestas</div>
+    <p class="age-gate-text">Debes tener 18 años o más (o la edad legal para apostar donde vives, si es mayor) para ver cuotas de apuestas o seguir un enlace a una casa de apuestas.</p>
+    <p class="age-gate-text">Si el juego te está causando daño a ti o a alguien que conoces, hay ayuda confidencial y gratuita disponible 24/7: <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a> · <a href="https://www.gamblingtherapy.org" target="_blank" rel="noopener noreferrer">Gambling Therapy</a> · 1-800-GAMBLER (EE. UU.).</p>
+    <div class="age-gate-actions">
+      <button type="button" id="age-gate-cancel" class="age-gate-cancel-btn">Cancelar</button>
+      <button type="button" id="age-gate-confirm" class="age-gate-confirm-btn">Tengo 18+, mostrar cuotas</button>
+    </div>
+  </div>
+</div>
+
+<div id="odds-modal-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="odds-modal">
+    <div class="lab-modal-header">
+      <span id="odds-modal-title"></span>
+      <button type="button" id="odds-modal-close" class="lab-modal-close">✕</button>
+    </div>
+    <div id="odds-modal-body" class="odds-modal-body"></div>
+    <div class="odds-modal-disclosure">
+      Publicidad — matchups.live puede recibir una comisión si te registras a través de estos enlaces, sin costo adicional para ti. Las cuotas mostradas eran precisas al momento de nuestra última actualización y pueden diferir del precio en vivo actual de cada operador. Solo para mayores de 18 años. Por favor, juega con responsabilidad — <a href="https://www.begambleaware.org" target="_blank" rel="noopener noreferrer">BeGambleAware.org</a>.
+    </div>
+  </div>
 </div>
 
 <script src="/app.js"></script>

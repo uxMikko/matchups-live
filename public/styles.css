@@ -113,19 +113,53 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .today-team-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .today-team-score { font-size: 16px; font-weight: 800; }
 .today-team-score.live { color: var(--red); }
+.today-card-odds { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
 
-/* Bracket tree: column 1 = the 16 real R32 matches (one per row), columns
-   2-5 = TBD placeholders for R16/QF/SF/Final, each centered across the rows
-   of its two feeder matches via CSS grid row-spanning. */
-.bracket-tree-wrap { overflow-x: auto; padding-bottom: 8px; }
+/* Bracket tree: 7-column mirrored layout.
+   Cols 1/7 = R32 (8 per side), cols 2/6 = R16, cols 3/5 = QF+SF integrated
+   (bracket-int-group: QF top, SF middle, QF bottom), col 4 = Final+Bronze.
+   8 data rows (one per R32 match per side). */
+.bracket-tree-wrap {
+  overflow-x: auto;
+  padding: 0 16px 8px;
+  /* Full-viewport breakout from .max-w */
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+}
 .bracket-tree {
   display: grid;
-  grid-template-columns: 230px 160px 160px 150px 150px;
-  grid-template-rows: 22px repeat(16, auto);
-  grid-auto-rows: auto;
-  gap: 2px 16px;
-  min-width: 920px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: 22px repeat(8, auto);
+  gap: 2px 10px;
+  width: 100%;
+  min-width: 900px;
 }
+/* Integrated QF+SF column — flex container holding QF, SF, QF cards
+   with spacers so the SF sits centered between the two QFs */
+.bracket-int-col {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.bracket-int-spacer { flex: 1; min-height: 10px; }
+.bracket-int-group { display: flex; flex-direction: column; align-self: center; }
+/* Cards inside .bracket-int-group must fill the column width.
+   .tie-card.later-round has specificity (0,2,0) with align-self:center — these
+   selectors use (0,3,0) to win without !important. */
+.bracket-int-group > .tie-card.later-round,
+.bracket-int-group > .tbd-card.later-round { align-self: stretch; width: 100%; }
+.bracket-int-group .result-card.later-round { align-self: stretch; width: 100%; }
+.bracket-int-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  text-align: center;
+  padding-bottom: 3px;
+  margin-top: 4px;
+}
+.bracket-int-group:first-child .bracket-int-label { margin-top: 0; }
 .round-title { grid-row: 1; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; text-align: center; align-self: center; }
 
 .tie-card {
@@ -138,6 +172,9 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
   transition: box-shadow 0.3s;
   grid-column: 1;
   align-self: start;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 .tie-card.later-round { align-self: center; }
 .tie-card.just-updated {
@@ -152,23 +189,36 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .match-num { font-size: 13px; font-weight: 800; color: #15151a; }
 .match-date { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .updating-badge { font-size: 10px; color: var(--pulse); font-weight: 700; }
-.tie-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 13px; font-weight: 600; }
-.tie-team .seed { font-size: 10px; font-weight: 700; color: #9aa0ad; width: 16px; flex-shrink: 0; }
-.tie-team .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.team-prob-pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; flex-shrink: 0; }
-.team-prob-pill.orange { background: #ffd9b8; color: #cd7221; }
-.team-prob-pill.green { background: #c1eec6; color: #4aa250; }
+/* ── Team row classes ─────────────────────────────────────────────────────────
+   Two semantic states, three layout variants. Pick by TEAM STATE, not card type:
 
-/* TBD card — a greyed-out version of a real R32 card for a later-round slot
-   whose two teams aren't determined yet. Same .tie-card shell (border,
-   radius, padding, shadow) and the same .tie-top header (match number +
-   real kickoff date, since that's fixed by FIFA's schedule regardless of
-   who qualifies - see KNOCKOUT_KICKOFFS), just every bit of content inside
-   muted, and each team row showing the feeder match ("W93") and a
-   flag-shaped "?" placeholder instead of a real flag and name. */
+   CONFIRMED team  →  .tie-team   (black name, real flag, optional prob pill)
+   PENDING / TBD   →  .tbd-team   (grey name, ? placeholder, feeder code grey)
+
+   Layout variants of the confirmed state:
+     .tie-team          vertical-stack card (Live Standings actual tab)
+     .result-team       horizontal-layout card (Lab, Predicted bracket)
+
+   Rule: never use .tbd-team for a team that is actually known.
+         never use .tie-team/.result-team for a team that is TBD.
+   ──────────────────────────────────────────────────────────────────────────── */
+.tie-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 13px; font-weight: 600; transition: opacity 0.15s; }
+.tie-team .seed { font-size: 10px; font-weight: 700; color: #9aa0ad; min-width: 28px; flex-shrink: 0; }
+.tie-team .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #15151a; }
+.tie-team.loser { opacity: 0.38; }
+.team-prob-pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; flex-shrink: 0; }
+.team-prob-pill.tier-green  { background: #dcfce7; color: #16a34a; }
+.team-prob-pill.tier-yellow { background: #fef3c7; color: #92660a; }
+.team-prob-pill.tier-orange { background: #ffedd5; color: #c2410c; }
+.team-prob-pill.tier-red    { background: #fee2e2; color: #b91c1c; }
+.team-prob-pill.tier-grey   { background: #e5e7eb; color: #4b5563; }
+.tie-score { font-size: 13px; font-weight: 800; color: #15151a; flex-shrink: 0; }
+.tie-pen-note { font-size: 10px; font-weight: 700; color: var(--muted); text-align: center; letter-spacing: 0.03em; padding: 2px 0 3px; }
+
 .tbd-card .match-num, .tbd-card .match-date { color: #b4b8c2; }
 .tbd-team { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 13px; font-weight: 600; }
 .tbd-team .name { color: #b4b8c2; }
+.tbd-team .seed { font-size: 10px; font-weight: 700; color: #b4b8c2; min-width: 28px; flex-shrink: 0; }
 .tbd-team .result-right.muted { color: #b4b8c2; font-size: 10px; font-weight: 700; flex-shrink: 0; white-space: nowrap; }
 .flag-placeholder {
   width: 20px; height: 15px; flex-shrink: 0; border-radius: 2px;
@@ -186,8 +236,9 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .result-card { display: flex; align-items: center; gap: 10px; }
 .result-num { font-size: 11px; font-weight: 700; color: #9aa0ad; flex-shrink: 0; width: 20px; text-align: center; }
 .result-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
-.result-team { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+.result-team { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; transition: opacity 0.15s; }
 .result-team .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-team.loser { opacity: 0.38; }
 .result-right { flex-shrink: 0; }
 .result-right.muted { font-size: 11px; font-weight: 700; color: #9aa0ad; }
 .result-right.scored { font-size: 15px; font-weight: 800; color: #15151a; }
@@ -229,10 +280,27 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
   width: 100%; align-self: stretch; padding: 8px 14px; font-size: 12px;
   border-radius: 10px;
 }
+.futures-bet-banner {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; margin-top: 16px; text-align: center;
+}
+.futures-bet-text { font-size: 13px; }
+.futures-bet-actions { display: flex; gap: 10px; }
+.futures-bet-btn {
+  background: #15151a; color: #fff; border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 700; padding: 7px 14px; cursor: pointer;
+}
+.futures-bet-btn:hover { background: #2a2a33; }
+.futures-bet-disclosure { font-size: 10px; color: var(--muted); line-height: 1.5; }
+.futures-bet-disclosure a { color: var(--muted); text-decoration: underline; }
+
 .lab-card { cursor: pointer; }
 .lab-card:hover { border-color: #b4b8c2; }
 .lab-card.lab-flash, .lab-modal-sticky.lab-flash { animation: pulse-border 1.4s ease-out; }
 .lab-card.lab-picked { border-left: 3px solid #1a7a40; }
+.lab-card.lab-concluded { cursor: default; }
+.lab-card.lab-concluded:hover { border-color: var(--border); }
 .lab-tbd {
   background: #f4f4f6; border: 1px dashed #d7d7db; border-radius: 7px;
   padding: 6px; text-align: center; align-self: center; justify-self: stretch;
@@ -304,6 +372,103 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 @media (max-width: 600px) {
   .lab-modal-columns > .lab-group-block { flex-basis: 100%; }
 }
+
+/* Odds badge - the only "betting content" visible pre-age-confirmation;
+   deliberately plain text, no figures, no bookmaker branding. */
+.odds-badge {
+  background: #eef2ff; color: #3b4a8a; border: 1px solid #dbe3fb; border-radius: 6px;
+  font-size: 10px; font-weight: 700; padding: 2px 7px; cursor: pointer; flex-shrink: 0;
+}
+.odds-badge:hover { background: #dbe3fb; }
+
+/* Age gate - reuses .lab-modal-backdrop's overlay, its own narrower card. */
+.age-gate-modal {
+  background: #fff; border-radius: 12px; width: 100%; max-width: 420px;
+  padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.age-gate-title { font-size: 16px; font-weight: 800; margin-bottom: 10px; }
+.age-gate-text { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+.age-gate-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.age-gate-cancel-btn {
+  background: #fff; color: #15151a; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; font-weight: 700; padding: 8px 16px; cursor: pointer;
+}
+.age-gate-confirm-btn {
+  background: #15151a; color: #fff; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 700; padding: 8px 16px; cursor: pointer;
+}
+.age-gate-confirm-btn:hover { background: #2a2a33; }
+
+/* Odds modal */
+.odds-modal {
+  background: #fff; border-radius: 12px; width: 100%; max-width: 480px;
+  max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.odds-modal-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.odds-modal-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 12px 0; }
+.bookie-row { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.bookie-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.bookie-name { font-size: 14px; font-weight: 800; }
+.bookie-link {
+  background: #15151a; color: #fff; border-radius: 6px; font-size: 11px; font-weight: 700;
+  padding: 6px 12px; flex-shrink: 0;
+}
+.bookie-link:hover { background: #2a2a33; }
+.bookie-odds-cells { display: flex; gap: 8px; }
+.bookie-odds-cell {
+  flex: 1; background: var(--surface); border-radius: 6px; padding: 6px 4px;
+  text-align: center;
+}
+.bookie-odds-label { display: block; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.bookie-odds-value { display: block; font-size: 15px; font-weight: 800; margin-top: 2px; }
+.odds-modal-disclosure {
+  font-size: 10px; color: var(--muted); line-height: 1.5; padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+.odds-modal-disclosure a { color: var(--muted); text-decoration: underline; }
+
+/* ── Matchup info modal (predicted-bracket click) ─────────────────────────── */
+.matchup-info-modal {
+  background: #fff; border-radius: 12px; width: 100%; max-width: 420px;
+  max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.matchup-info-title { font-size: 15px; font-weight: 800; }
+.matchup-info-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+/* Team header — flag above name above win% */
+.mim-teams { display: flex; align-items: flex-start; gap: 10px; }
+.mim-team { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.mim-flag { width: 56px; height: 42px; object-fit: cover; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,0.12); display: block; }
+.mim-team-name { font-size: 13px; font-weight: 700; text-align: center; }
+.mim-vs-col { color: #9aa0ad; font-size: 12px; font-weight: 700; align-self: center; flex-shrink: 0; padding-bottom: 20px; }
+/* Score / live state display */
+.mim-score-display { background: var(--surface); border-radius: 10px; padding: 10px 16px; text-align: center; }
+.mim-score-nums { font-size: 28px; font-weight: 800; letter-spacing: 4px; }
+.mim-score-meta { font-size: 11px; font-weight: 700; color: var(--muted); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.mim-live-dot { display: inline-block; width: 7px; height: 7px; background: #ef4444; border-radius: 50%; flex-shrink: 0; }
+.mim-kickoff { font-size: 13px; color: var(--muted); font-weight: 600; }
+.mim-odds-toggle { display: flex; align-items: center; gap: 6px; }
+.mim-toggle-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 2px; }
+.mim-toggle-btn { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 6px; border: 1.5px solid var(--border); background: none; color: var(--muted); cursor: pointer; transition: background 0.1s; }
+.mim-toggle-btn.active { background: #15151a; color: #fff; border-color: #15151a; }
+.mim-odds-row { display: flex; gap: 8px; }
+.mim-odds-cell { flex: 1; background: var(--surface); border-radius: 8px; padding: 10px 6px; text-align: center; }
+.mim-odds-label { display: block; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mim-odds-value { display: block; font-size: 17px; font-weight: 800; margin-bottom: 2px; }
+.mim-odds-implied { display: block; font-size: 11px; color: var(--muted); }
+.mim-source { font-size: 12px; color: var(--muted); line-height: 1.5; display: flex; gap: 6px; background: var(--surface); border-radius: 8px; padding: 10px; }
+.mim-source-icon { flex-shrink: 0; }
+.mim-elo-section { display: flex; flex-direction: column; gap: 8px; }
+.mim-elo-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.mim-elo-team { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: var(--surface); border-radius: 8px; }
+.mim-elo-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
+.mim-elo-value { font-size: 15px; font-weight: 800; }
+.mim-elo-probs { display: flex; gap: 8px; }
+.mim-elo-prob-item { flex: 1; background: var(--surface); border-radius: 8px; padding: 8px 4px; text-align: center; }
+.mim-elo-prob-item .mim-prob-label { display: block; font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mim-elo-prob-item .mim-prob-value { display: block; font-size: 16px; font-weight: 800; }
+/* Cards in the predicted bracket are clickable */
+#predicted-bracket-grid [data-match-num] { cursor: pointer; transition: box-shadow 0.1s; }
+#predicted-bracket-grid [data-match-num]:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.14); }
 
 .lab-group-block { margin-bottom: 18px; }
 .lab-group-block .group-card { margin-bottom: 8px; }
