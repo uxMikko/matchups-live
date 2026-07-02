@@ -42,8 +42,24 @@ async def main():
     engine.OFFICIAL_RANKS = await scraper.fetch_group_ranks()
     forecast.ELO_RATINGS = await elo.fetch_elo_ratings()
     forecast.REAL_ODDS = await odds_state.load_real_odds()
+    tournament_probs = await odds_state.load_tournament_probs()
+    forecast.TOURNAMENT_PROBS = tournament_probs
 
-    state = engine.compute_state(results, matches, r32_kickoffs)
+    # Fetch yellow+red card totals for every finished match and merge into
+    # results so the engine can apply the TCS tiebreaker (pts→GD→GF→TCS→rank).
+    card_counts = await scraper.fetch_card_counts([
+        {"event_id": r["event_id"], "home_espn": r["home_espn"], "away_espn": r["away_espn"]}
+        for r in results
+    ])
+    for r in results:
+        cards = card_counts.get(r.get("event_id"), {})
+        r["home_yellow"] = cards.get("home_yellow", 0)
+        r["away_yellow"] = cards.get("away_yellow", 0)
+        r["home_red"] = cards.get("home_red", 0)
+        r["away_red"] = cards.get("away_red", 0)
+
+    ko_results = await scraper.fetch_knockout_results()
+    state = engine.compute_state(results, matches, r32_kickoffs, ko_results)
 
     # Decide whether this cycle is worth an Odds API credit (see
     # odds_state.py for the full trigger model/budget logic), and if it
@@ -58,9 +74,11 @@ async def main():
     )
     if spent_credit:
         forecast.REAL_ODDS = await odds_state.load_real_odds()
-        state = engine.compute_state(results, matches, r32_kickoffs)
+        tournament_probs = await odds_state.load_tournament_probs()
+        forecast.TOURNAMENT_PROBS = tournament_probs
+        state = engine.compute_state(results, matches, r32_kickoffs, ko_results)
 
-    predicted = engine.compute_predicted_state(results, matches, r32_kickoffs)
+    predicted = engine.compute_predicted_state(results, matches, r32_kickoffs, ko_results)
     fixture_probs = forecast.remaining_fixture_probs(results, matches)
     await rc.push_state(
         state["standings"],
@@ -73,6 +91,7 @@ async def main():
         fixture_probs,
         forecast.ELO_RATINGS,
         forecast.REAL_ODDS,
+        tournament_probs,
     )
     log.info(f"Refreshed: {len(results)} results loaded, {len(live_matches)} live now")
 

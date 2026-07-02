@@ -231,68 +231,68 @@ async def fetch_group_stage_matches() -> list[dict]:
     return matches
 
 
-# Real Round of 32 kickoff window (the group stage one above ends too early
-# — R32 runs June 28 - July 3). ESPN already carries placeholder fixtures
-# for these (teams not yet determined, but real scheduled date/time) with
-# the placeholder description as the team displayName (e.g. "Group A 2nd
-# Place"), keyed here as "{home} vs {away}", verified by cross-checking
-# every one against our own FIXED_R32/THIRD_SLOTS composition in engine.py
-# — every slot matched exactly.
-#
-# Gotcha confirmed twice now: ESPN swaps the literal team name in for the
-# "Group X Winner" placeholder as soon as that group winner is mathematically
-# determined — not just for the two host nations (Mexico/USA, who get a
-# fixed bracket seed regardless of form), but for any group once it's
-# clinched (e.g. Germany in Group E, mid-tournament). _canonical_role()
-# below undoes that swap before the dict lookup, instead of hardcoding every
-# team name that might eventually get clinched.
-R32_WINDOW = "20260628-20260704"
-R32_NOTE_TO_SLOT = {
-    "Group A 2nd Place vs Group B 2nd Place": "R1",
-    "Group C Winner vs Group F 2nd Place": "R2",
-    "Group F Winner vs Group C 2nd Place": "R3",
-    "Group H Winner vs Group J 2nd Place": "R4",
-    "Group J Winner vs Group H 2nd Place": "R5",
-    "Group E 2nd Place vs Group I 2nd Place": "R6",
-    "Group K 2nd Place vs Group L 2nd Place": "R7",
-    "Group D 2nd Place vs Group G 2nd Place": "R8",
-    "Group A Winner vs Third Place Group C/E/F/H/I": "RA",
-    "Group B Winner vs Third Place Group E/F/G/I/J": "RB",
-    "Group D Winner vs Third Place Group B/E/F/I/J": "RD",
-    "Group E Winner vs Third Place Group A/B/C/D/F": "RE",
-    "Group G Winner vs Third Place Group A/E/H/I/J": "RG",
-    "Group I Winner vs Third Place Group C/D/F/G/H": "RI",
-    "Group K Winner vs Third Place Group D/E/I/J/L": "RK",
-    "Group L Winner vs Third Place Group E/H/I/J/K": "RL",
+# R32 kickoff times (UTC) — fixed by FIFA schedule, no need to scrape.
+R32_KICKOFFS: dict[str, str] = {
+    "R1": "2026-06-28T19:00Z",
+    "R2": "2026-06-29T17:00Z",
+    "RE": "2026-06-29T20:30Z",
+    "R3": "2026-06-30T01:00Z",
+    "R6": "2026-06-30T17:00Z",
+    "RI": "2026-06-30T21:00Z",
+    "RA": "2026-07-01T01:00Z",
+    "RL": "2026-07-01T16:00Z",
+    "RG": "2026-07-01T20:00Z",
+    "RD": "2026-07-02T00:00Z",
+    "R4": "2026-07-02T19:00Z",
+    "R7": "2026-07-02T23:00Z",
+    "RB": "2026-07-03T03:00Z",
+    "R8": "2026-07-03T18:00Z",
+    "R5": "2026-07-03T22:00Z",
+    "RK": "2026-07-04T01:30Z",
 }
-
-
-def _canonical_role(display_name: str) -> str:
-    """Undoes ESPN's "Group X Winner" -> "<real team name>" swap (see the
-    comment above R32_NOTE_TO_SLOT) so the dict lookup still matches once a
-    group is clinched. Every swap observed so far has been a group winner
-    (never a 2nd place or a confirmed third), so that's the only role
-    assumed here; non-team text (still a placeholder, or anything
-    unrecognized) passes through unchanged."""
-    import engine
-    team = NAME_FROM_ESPN.get(display_name, display_name)
-    group = engine.TEAM_TO_GROUP.get(team)
-    return f"Group {group} Winner" if group else display_name
 
 
 async def fetch_r32_kickoffs() -> dict[str, str]:
     """{slot: kickoff ISO datetime (UTC)} for each of the 16 R32 slots."""
-    data = await _fetch_scoreboard(R32_WINDOW)
-    kickoffs: dict[str, str] = {}
+    return R32_KICKOFFS
+
+
+KNOCKOUT_WINDOW = "20260628-20260720"
+
+
+async def fetch_knockout_results() -> dict[str, dict]:
+    """{sorted_team_key: {home, away, home_score, away_score, status}} for
+    every completed knockout match (R32 through Final). Keyed by
+    "|".join(sorted([home, away])) so callers can look up by team pair
+    without knowing the FIFA match number (which ESPN doesn't expose).
+    Only status=="ft" entries are included — in-progress scores are skipped
+    so a partial scoreline mid-match doesn't lock in prematurely."""
+    data = await _fetch_scoreboard(KNOCKOUT_WINDOW)
+    results: dict[str, dict] = {}
     for event in data.get("events", []):
         comp = event["competitions"][0]
-        home_c = next(c for c in comp["competitors"] if c["homeAway"] == "home")
-        away_c = next(c for c in comp["competitors"] if c["homeAway"] == "away")
-        key = f"{_canonical_role(home_c['team']['displayName'])} vs {_canonical_role(away_c['team']['displayName'])}"
-        slot = R32_NOTE_TO_SLOT.get(key)
-        if slot:
-            kickoffs[slot] = comp["date"]
-    return kickoffs
+        note = comp.get("altGameNote", "")
+        if "Group" in note:
+            continue  # group stage event in the window
+        if not any(k in note for k in ("Round of", "Quarterfinal", "Semifinal", "Final")):
+            continue
+        status_type = comp["status"]["type"]
+        if not (status_type.get("completed") or status_type.get("state") == "post"):
+            continue  # not finished yet
+        home_c = next((c for c in comp["competitors"] if c["homeAway"] == "home"), None)
+        away_c = next((c for c in comp["competitors"] if c["homeAway"] == "away"), None)
+        if not home_c or not away_c:
+            continue
+        home = NAME_FROM_ESPN.get(home_c["team"]["displayName"], home_c["team"]["displayName"])
+        away = NAME_FROM_ESPN.get(away_c["team"]["displayName"], away_c["team"]["displayName"])
+        key = "|".join(sorted([home, away]))
+        results[key] = {
+            "home": home, "away": away,
+            "home_score": int(home_c["score"]),
+            "away_score": int(away_c["score"]),
+            "status": "ft",
+        }
+    return results
 
 
 STANDINGS_URL = "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings"
@@ -370,6 +370,9 @@ async def fetch_group_stage_results() -> tuple[list[dict], list[dict]]:
             results.append({
                 "home": home, "away": away, "group": group,
                 "home_score": score.home_score, "away_score": score.away_score,
+                "event_id": event["id"],
+                "home_espn": home_c["team"]["displayName"],
+                "away_espn": away_c["team"]["displayName"],
             })
         elif score.status in ("live", "ht"):
             live_matches.append({
@@ -430,3 +433,49 @@ async def fetch_red_card_counts(live_events: list[dict]) -> dict[str, dict[str, 
                     away_n += 1
             counts[ev["event_id"]] = {"home": home_n, "away": away_n}
     return counts
+
+
+async def fetch_card_counts(events: list[dict]) -> dict[str, dict]:
+    """{event_id: {"home_yellow": n, "away_yellow": n, "home_red": n, "away_red": n}}
+    for each event (finished or live). Uses the summary endpoint's boxscore
+    statistics, which carry aggregate totals rather than per-event keyEvents
+    (more reliable for yellow cards). Fetches concurrently.
+    events: [{"event_id", "home_espn", "away_espn"}, ...]"""
+    if not events:
+        return {}
+
+    async def _fetch_one(client: httpx.AsyncClient, ev: dict) -> tuple[str, dict]:
+        try:
+            r = await client.get(
+                SUMMARY_URL,
+                params={"event": ev["event_id"]},
+                headers={"User-Agent": USER_AGENT},
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            log.warning(f"ESPN summary fetch failed (event {ev['event_id']}): {e}")
+            return ev["event_id"], {}
+
+        result: dict[str, int] = {"home_yellow": 0, "away_yellow": 0, "home_red": 0, "away_red": 0}
+        for team in (data.get("boxscore") or {}).get("teams", []) or []:
+            side = "home" if team.get("homeAway") == "home" else "away"
+            # ESPN sets value=null for card stats; displayValue has the real count.
+            # Other stats may have float displayValues so round to int.
+            def _stat(s):
+                v = s.get("value")
+                if v is not None:
+                    return int(v)
+                try:
+                    return int(float(s.get("displayValue") or 0))
+                except (ValueError, TypeError):
+                    return 0
+            stats = {s["name"]: _stat(s) for s in team.get("statistics", []) or []}
+            result[f"{side}_yellow"] = stats.get("yellowCards", stats.get("foulsYellow", 0))
+            result[f"{side}_red"] = stats.get("redCards", 0)
+        return ev["event_id"], result
+
+    async with httpx.AsyncClient() as client:
+        pairs = await asyncio.gather(*[_fetch_one(client, ev) for ev in events])
+    return dict(pairs)

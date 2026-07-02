@@ -19,6 +19,7 @@ log = logging.getLogger("odds_api")
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 ODDS_API_URL = "https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/"
+ODDS_API_WINNER_URL = "https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup_winner/odds/"
 
 # The Odds API's team names that differ from our internal ones (see
 # scraper.ESPN_NAME for the equivalent ESPN-side mapping). Confirmed by
@@ -44,18 +45,24 @@ def _int_or_none(v):
 def _implied_probs(home_espn: str, away_espn: str, bookmaker: dict) -> dict | None:
     """De-vigged implied win/draw/loss probabilities from one bookmaker's
     h2h market: invert each decimal price to a raw probability, then
-    normalize so the three sum to 1 (removes the bookmaker's overround)."""
+    normalize so they sum to 1 (removes the bookmaker's overround).
+    Handles both 3-way (group stage: home/draw/away) and 2-way (knockout:
+    home/away only — bookmakers drop the draw since the match must have a
+    winner via ET/penalties)."""
     market = next((m for m in bookmaker.get("markets", []) if m["key"] == "h2h"), None)
     if not market:
         return None
     prices = {o["name"]: o["price"] for o in market["outcomes"]}
-    if home_espn not in prices or away_espn not in prices or "Draw" not in prices:
+    if home_espn not in prices or away_espn not in prices:
         return None
-    raw = {k: 1 / v for k, v in prices.items()}
+    # Include draw only if the bookmaker offered it (group stage); knockout
+    # h2h is often 2-way — normalise over whichever outcomes are present.
+    candidates = {k: v for k, v in prices.items() if k in {home_espn, away_espn, "Draw"}}
+    raw = {k: 1 / v for k, v in candidates.items()}
     total = sum(raw.values())
     return {
         "p_home": raw[home_espn] / total,
-        "p_draw": raw["Draw"] / total,
+        "p_draw": raw.get("Draw", 0) / total,
         "p_away": raw[away_espn] / total,
     }
 
@@ -73,16 +80,15 @@ TRACKED_BOOKMAKERS = {
 
 def _decimal_prices(home_espn: str, away_espn: str, bookmaker: dict) -> dict | None:
     """Raw decimal h2h prices for one named bookmaker, unmodified (no
-    de-vig) - this is what actually gets displayed next to that
-    bookmaker's name, as opposed to _implied_probs' normalized figure
-    which only feeds our own forecast math."""
+    de-vig). draw is None for knockout matches where bookmakers offer
+    2-way h2h without a draw outcome."""
     market = next((m for m in bookmaker.get("markets", []) if m["key"] == "h2h"), None)
     if not market:
         return None
     prices = {o["name"]: o["price"] for o in market["outcomes"]}
-    if home_espn not in prices or away_espn not in prices or "Draw" not in prices:
+    if home_espn not in prices or away_espn not in prices:
         return None
-    return {"home": prices[home_espn], "draw": prices["Draw"], "away": prices[away_espn]}
+    return {"home": prices[home_espn], "draw": prices.get("Draw"), "away": prices[away_espn]}
 
 
 def _tracked_bookmaker_odds(home_espn: str, away_espn: str, bookmakers: list[dict]) -> dict:
@@ -98,6 +104,59 @@ def _tracked_bookmaker_odds(home_espn: str, away_espn: str, bookmakers: list[dic
                     out[label] = prices
                     break
     return out
+
+
+async def fetch_outrights() -> tuple[dict[str, float], dict]:
+    """Tournament winner (outright) market → implied win probability per team.
+    De-vigged average across all bookmakers in the EU region. Returns
+    ({internal_team_name: p_win}, meta). Costs 1 credit per call."""
+    if not ODDS_API_KEY:
+        log.warning("ODDS_API_KEY not set, skipping outrights fetch")
+        return {}, {"requests_remaining": None, "requests_used": None}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                ODDS_API_WINNER_URL,
+                params={
+                    "apiKey": ODDS_API_KEY,
+                    "regions": "eu",
+                    "markets": "outrights",
+                    "oddsFormat": "decimal",
+                },
+                timeout=15,
+            )
+            r.raise_for_status()
+            events = r.json()
+            meta = {
+                "requests_remaining": _int_or_none(r.headers.get("x-requests-remaining")),
+                "requests_used": _int_or_none(r.headers.get("x-requests-used")),
+            }
+    except Exception as e:
+        log.warning(f"Odds API outrights call failed: {e}")
+        return {}, {"requests_remaining": None, "requests_used": None}
+
+    # Collect raw implied probs per team across all bookmakers for all events
+    # (there's usually just one event: the tournament winner market).
+    team_probs: dict[str, list[float]] = {}
+    for event in events:
+        for bm in event.get("bookmakers", []):
+            market = next((m for m in bm.get("markets", []) if m["key"] == "outrights"), None)
+            if not market:
+                continue
+            prices = {
+                _normalize(o["name"]): o["price"]
+                for o in market.get("outcomes", []) if o.get("price", 0) > 0
+            }
+            raw = {t: 1 / p for t, p in prices.items()}
+            total = sum(raw.values())
+            if not total:
+                continue
+            for team, raw_p in raw.items():
+                team_probs.setdefault(team, []).append(raw_p / total)
+
+    probs = {team: sum(ps) / len(ps) for team, ps in team_probs.items()}
+    return probs, meta
 
 
 async def fetch_odds() -> tuple[list[dict], dict]:
@@ -153,12 +212,20 @@ async def fetch_odds() -> tuple[list[dict], dict]:
         if not per_bookmaker:
             continue
         n = len(per_bookmaker)
+        avg_p_home = sum(p["p_home"] for p in per_bookmaker) / n
+        avg_p_draw = sum(p["p_draw"] for p in per_bookmaker) / n
+        avg_p_away = sum(p["p_away"] for p in per_bookmaker) / n
+        # Convert "result in 90 min" (3-way) to "probability of advancing"
+        # (2-way). If it goes to extra time/pens, we assume 50/50, so each
+        # team inherits half the draw probability. p_draw is stored as 0 so
+        # downstream code can distinguish these entries (advancement odds)
+        # from stale group-stage entries that still have p_draw > 0.
         matchups.append({
             "home": _normalize(home_espn),
             "away": _normalize(away_espn),
-            "p_home": sum(p["p_home"] for p in per_bookmaker) / n,
-            "p_draw": sum(p["p_draw"] for p in per_bookmaker) / n,
-            "p_away": sum(p["p_away"] for p in per_bookmaker) / n,
+            "p_home": avg_p_home + avg_p_draw / 2,
+            "p_draw": 0,
+            "p_away": avg_p_away + avg_p_draw / 2,
             # Sparse - {} for most matches until Unibet/Betsson actually
             # price that specific fixture. Same call, zero extra credits.
             "bookmaker_odds": _tracked_bookmaker_odds(home_espn, away_espn, bookmakers),

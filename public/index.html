@@ -85,7 +85,7 @@
   <div id="tab-predicted" class="tab-panel" style="display:none">
     <!-- PREDICTED BRACKET -->
     <div class="section">
-      <div class="info-bubble"><span class="icon">ⓘ</span>How the group stage and bracket would finish if every team's odds-implied chances held exactly</div>
+      <div class="info-bubble"><span class="icon">ⓘ</span>Matches with available bookmaker odds use market-implied probabilities to project results. Remaining matchups use Elo ratings. Click any match for details.</div>
       <div id="predicted-bracket-spinner" class="spinner">Loading bracket…</div>
       <div class="bracket-tree-wrap">
         <div id="predicted-bracket-grid" class="bracket-tree" style="display:none"></div>
@@ -93,13 +93,13 @@
     </div>
 
     <!-- PREDICTED GROUP STANDINGS -->
-    <div class="section">
+    <div class="section" id="predicted-standings-section">
       <div class="section-title">Odds-Based Final Group Standings</div>
       <div id="predicted-standings-grid" class="groups-grid"></div>
     </div>
 
     <!-- PREDICTED THIRD-PLACE RACE -->
-    <div class="section">
+    <div class="section" id="predicted-thirds-section">
       <div class="section-title">Odds-Based Third-Place Race</div>
       <div id="predicted-thirds-list" class="thirds-list"></div>
     </div>
@@ -128,13 +128,13 @@
     </div>
 
     <!-- LAB GROUP STANDINGS -->
-    <div class="section">
+    <div class="section" id="lab-standings-section">
       <div class="section-title">Group Standings (your scenario)</div>
       <div id="lab-standings-grid" class="groups-grid"></div>
     </div>
 
     <!-- LAB THIRD-PLACE RACE -->
-    <div class="section">
+    <div class="section" id="lab-thirds-section">
       <div class="section-title">Third-Place Race (your scenario)</div>
       <div id="lab-thirds-list" class="thirds-list"></div>
     </div>
@@ -193,6 +193,16 @@
       <button type="button" id="age-gate-cancel" class="age-gate-cancel-btn">Cancel</button>
       <button type="button" id="age-gate-confirm" class="age-gate-confirm-btn">I'm 18+, show odds</button>
     </div>
+  </div>
+</div>
+
+<div id="matchup-info-backdrop" class="lab-modal-backdrop" style="display:none">
+  <div class="matchup-info-modal">
+    <div class="lab-modal-header">
+      <span id="matchup-info-title" class="matchup-info-title"></span>
+      <button type="button" id="matchup-info-close" class="lab-modal-close">✕</button>
+    </div>
+    <div id="matchup-info-body" class="matchup-info-body"></div>
   </div>
 </div>
 

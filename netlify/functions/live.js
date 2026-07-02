@@ -1,12 +1,10 @@
-// GET /api/live — live group-stage match status straight from ESPN, on every
-// request, bypassing Redis/cron entirely. The cron (refresh.py) only caches
-// *finished* results (see scraper.fetch_group_stage_results), since it can
-// be unreliable by several minutes — fine for standings, not for a live
-// clock. This endpoint exists so the live score/clock/status can be as
-// fresh as however often the frontend polls it, independent of the cron.
+// GET /api/live — live match status straight from ESPN, on every request,
+// bypassing Redis/cron entirely. Covers both the group stage and all
+// knockout rounds so the strip stays live through the Final.
 
 const SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard";
 const GROUP_STAGE_WINDOW = "20260610-20260701";
+const KNOCKOUT_WINDOW = "20260628-20260720";
 
 // Mirrors bot/scraper.py's NAME_FROM_ESPN — same 5 teams ESPN names
 // differently than the rest of the app does.
@@ -98,18 +96,36 @@ function clockIsRunning(status, type) {
 // post-match window even for a match that ran long.
 const FT_DISPLAY_WINDOW_MS = 200 * 60 * 1000;
 
+// Round name from ESPN's altGameNote for knockout matches.
+function knockoutRoundLabel(note) {
+  if (/Round of 32/i.test(note))  return "Round of 32";
+  if (/Round of 16/i.test(note))  return "Round of 16";
+  if (/Quarterfinal/i.test(note)) return "Quarterfinal";
+  if (/Semifinal/i.test(note))    return "Semifinal";
+  if (/Third.Place/i.test(note) || /Bronze/i.test(note)) return "Bronze Final";
+  if (/Final/i.test(note))        return "Final";
+  return null;
+}
+
 export async function handler() {
   try {
-    const res = await fetch(`${SCOREBOARD_URL}?dates=${GROUP_STAGE_WINDOW}`);
-    const data = await res.json();
+    // Fetch group stage and knockout windows in parallel.
+    const [gsRes, koRes] = await Promise.all([
+      fetch(`${SCOREBOARD_URL}?dates=${GROUP_STAGE_WINDOW}`),
+      fetch(`${SCOREBOARD_URL}?dates=${KNOCKOUT_WINDOW}`),
+    ]);
+    const [gsData, koData] = await Promise.all([gsRes.json(), koRes.json()]);
+
     const live = [];
     const all = [];
+    const knockout = [];
 
-    for (const event of data.events || []) {
+    // ── Group stage ───────────────────────────────────────────────────────────
+    for (const event of gsData.events || []) {
       const comp = event.competitions[0];
       const note = comp.altGameNote || "";
       const m = note.match(/Group ([A-L])\b/);
-      if (!m) continue; // knockout-stage placeholder, not group stage
+      if (!m) continue;
 
       const homeC = comp.competitors.find((c) => c.homeAway === "home");
       const awayC = comp.competitors.find((c) => c.homeAway === "away");
@@ -119,10 +135,6 @@ export async function handler() {
       const awayName = teamName(awayC.team.displayName);
       const numberKey = `${m[1]}|${[homeName, awayName].sort().join("|")}`;
 
-      // Every group-stage match (any status) goes into `all` — this backs
-      // the "today's games" day-strip, which shows finished/live/upcoming
-      // together. `live` stays scoped to live/ht/recent-ft only, since
-      // that's what the standings live-overlay and ticker logic need.
       all.push({
         number: GROUP_MATCH_NUMBER[numberKey] ?? null,
         home: homeName,
@@ -139,8 +151,7 @@ export async function handler() {
       if (status === "ft" && Date.now() - new Date(comp.date).getTime() > FT_DISPLAY_WINDOW_MS) continue;
 
       live.push({
-        home: homeName,
-        away: awayName,
+        home: homeName, away: awayName,
         home_score: parseInt(homeC.score, 10),
         away_score: parseInt(awayC.score, 10),
         status,
@@ -150,18 +161,63 @@ export async function handler() {
       });
     }
 
+    // ── Knockout rounds ───────────────────────────────────────────────────────
+    // The knockout window overlaps with the group stage window for the first
+    // few days; skip events already covered by the group-stage pass.
+    const gsEventIds = new Set((gsData.events || []).map(e => e.id));
+    for (const event of koData.events || []) {
+      if (gsEventIds.has(event.id)) continue;
+      const comp = event.competitions[0];
+      const note = comp.altGameNote || "";
+      const roundLabel = knockoutRoundLabel(note);
+      if (!roundLabel) continue; // not a knockout round we recognise
+
+      const homeC = comp.competitors.find((c) => c.homeAway === "home");
+      const awayC = comp.competitors.find((c) => c.homeAway === "away");
+      if (!homeC || !awayC) continue;
+      const statusType = comp.status.type;
+      const status = statusFrom(statusType);
+      const homeName = teamName(homeC.team.displayName);
+      const awayName = teamName(awayC.team.displayName);
+
+      // Detect penalty shootout from ESPN's status strings.
+      const statusStr = [statusType.name, statusType.description, statusType.shortDetail]
+        .filter(Boolean).join(" ").toLowerCase();
+      const decidedByPen = /pen(alt[yi])?|pk|shootout/.test(statusStr);
+
+      // Try to extract penalty shootout period scores from competitors' linescores.
+      // ESPN adds a "shootout" or "SO" typed period after full-time and extra time.
+      const penScore = (c) => {
+        const ls = c.linescores || [];
+        const soPeriod = ls.find(l =>
+          /shoot|so$/i.test(l.period?.type || "") ||
+          l.period?.abbreviation?.toLowerCase() === "so"
+        );
+        return soPeriod ? parseInt(soPeriod.value, 10) : null;
+      };
+
+      knockout.push({
+        home: homeName, away: awayName,
+        home_score: status === "ns" ? null : parseInt(homeC.score, 10),
+        away_score: status === "ns" ? null : parseInt(awayC.score, 10),
+        status,
+        minute: clockIsRunning(status, statusType) ? comp.status.displayClock : statusType.description,
+        round_label: roundLabel,
+        kickoff: comp.date,
+        decided_by_pen: decidedByPen,
+        pen_home: decidedByPen ? penScore(homeC) : null,
+        pen_away: decidedByPen ? penScore(awayC) : null,
+      });
+    }
+
     return {
       statusCode: 200,
       headers: {
         "Content-Type": "application/json",
-        // CDN-cached for 20s so concurrent visitors share one ESPN call
-        // (and one function invocation) instead of each triggering their
-        // own — "no-store" here is what blew through Netlify's free-tier
-        // usage limits and got the site paused.
         "Cache-Control": "public, max-age=20",
         "Access-Control-Allow-Origin": "*",
       },
-      body: JSON.stringify({ live_matches: live, all_matches: all }),
+      body: JSON.stringify({ live_matches: live, all_matches: all, knockout_matches: knockout }),
     };
   } catch (err) {
     console.error("live.js error:", err);

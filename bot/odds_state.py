@@ -62,6 +62,11 @@ def _match_key(home: str, away: str) -> str:
     return "|".join(sorted([home, away]))
 
 
+async def load_tournament_probs() -> dict[str, float]:
+    """{team_name: implied_tournament_win_probability} from the outrights market."""
+    return await rc.redis_get("odds:tournament_probs") or {}
+
+
 async def load_real_odds() -> dict[str, dict]:
     """{sorted-pair-key: {"home", "away", "p_home", "p_draw", "p_away",
     "fetched_at"}} for forecast.REAL_ODDS - reads straight from Redis, no
@@ -175,11 +180,17 @@ def _detect_goal_or_card(
 
 async def _schedule_trigger_due(matches: list[dict], results: list[dict], now: datetime) -> bool:
     """Fires once per calendar date, as soon as we're within
-    SCHEDULE_LEAD_HOURS of that date's first not-yet-finished kickoff."""
+    SCHEDULE_LEAD_HOURS of that date's first not-yet-finished kickoff.
+    When no group stage matches remain (knockout stage) still fires once
+    per day so knockout round odds stay fresh."""
     played = {(r["home"], r["away"]) for r in results}
     upcoming = [m for m in matches if (m["home"], m["away"]) not in played]
+
     if not upcoming:
-        return False
+        # Group stage complete: refresh once per day for knockout odds.
+        today = now.date().isoformat()
+        last_date = await rc.redis_get("odds:last_schedule_date")
+        return last_date != today
 
     kickoffs = [
         datetime.strptime(m["dt"], "%Y-%m-%d %H:%M").replace(tzinfo=scraper.PARIS)
@@ -260,10 +271,23 @@ async def maybe_update_odds(
     if reason == "schedule":
         played = {(r["home"], r["away"]) for r in results}
         upcoming = [m for m in matches if (m["home"], m["away"]) not in played]
-        next_date = min(
-            datetime.strptime(m["dt"], "%Y-%m-%d %H:%M").replace(tzinfo=scraper.PARIS)
-            for m in upcoming
-        ).date().isoformat()
+        if upcoming:
+            next_date = min(
+                datetime.strptime(m["dt"], "%Y-%m-%d %H:%M").replace(tzinfo=scraper.PARIS)
+                for m in upcoming
+            ).date().isoformat()
+        else:
+            next_date = now.date().isoformat()
         await rc.redis_set("odds:last_schedule_date", next_date)
+
+        # Also refresh tournament outright odds once per day (costs 1 more
+        # credit on schedule triggers; goal/red-card triggers skip this).
+        outright_probs, out_meta = await odds_api.fetch_outrights()
+        if outright_probs:
+            await rc.redis_set("odds:tournament_probs", outright_probs)
+            # Update credit ledger to reflect the second call.
+            out_remaining = out_meta.get("requests_remaining")
+            if out_remaining is not None:
+                await rc.redis_set("odds:credits_remaining", out_remaining)
 
     return True
