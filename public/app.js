@@ -337,8 +337,8 @@ function _renderMatchupInfoBody() {
 
   // ── Team header: flag above name above win probability ─────────────────────
   if (hasHome && hasAway) {
-    const { cls: hCls } = pHome != null ? advanceProbPill(pHome) : { cls: "tier-grey" };
-    const { cls: aCls } = pAway != null ? advanceProbPill(pAway) : { cls: "tier-grey" };
+    const { cls: hCls } = pHome != null ? matchWinPill(pHome) : { cls: "tier-grey" };
+    const { cls: aCls } = pAway != null ? matchWinPill(pAway) : { cls: "tier-grey" };
     html += `<div class="mim-teams">
       <div class="mim-team">
         ${_mimFlagHtml(home.team)}
@@ -841,12 +841,12 @@ function bracketTieCard(num, home, away, {
         }
       }
     }
-    const { pct: probPct, cls: pillCls } = advanceProbPill(prob);
+    const { pct: probPct, cls: pillCls } = matchWinPill(prob);
     let right = "";
     if (score != null) {
       const penStr = penScore != null ? `<span class="pen-score">(${penScore})</span>` : "";
       right = `<span class="tie-score">${score}${penStr}</span>`;
-    } else if (showProb && prob > 0 && probPct < 100) {
+    } else if (showProb && prob > 0) {
       right = `<span class="team-prob-pill ${pillCls}">${probPct}%</span>`;
     }
     return `<div class="tie-team${isLoser ? " loser" : ""}">
@@ -900,7 +900,7 @@ function resultTeamRow(t, score, isWinner, rightLabel = null, prob = null, penSc
   } else if (isWinner === false) {
     right = "";
   } else if (prob != null && prob > 0) {
-    const { pct, cls } = advanceProbPill(prob);
+    const { pct, cls } = matchWinPill(prob);
     right = `<span class="team-prob-pill ${cls}">${pct}%</span>`;
   } else {
     const label = rightLabel ?? t.seed ?? "";
@@ -1226,6 +1226,23 @@ function advanceProbPill(prob) {
   else if (pct >= 1) cls = "tier-red";
   else cls = "tier-grey";
   return { pct, cls, checkmark: "" };
+}
+
+// Head-to-head match win probability pill: green for the favorite (>50%),
+// orange→red for the underdog (<50%), scaled by how large the edge is.
+function matchWinPill(prob) {
+  const pct = Math.round((prob || 0) * 100);
+  let cls;
+  if      (pct >= 85) cls = "mw-g4";
+  else if (pct >= 70) cls = "mw-g3";
+  else if (pct >= 55) cls = "mw-g2";
+  else if (pct >  50) cls = "mw-g1";
+  else if (pct === 50) cls = "mw-neu";
+  else if (pct >= 45) cls = "mw-r1";
+  else if (pct >= 30) cls = "mw-r2";
+  else if (pct >= 15) cls = "mw-r3";
+  else                cls = "mw-r4";
+  return { pct, cls };
 }
 
 // ── STANDINGS ─────────────────────────────────────────────────────────────────

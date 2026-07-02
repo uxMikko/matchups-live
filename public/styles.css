@@ -208,11 +208,22 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
 .tie-team .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #15151a; }
 .tie-team.loser { opacity: 0.38; }
 .team-prob-pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; flex-shrink: 0; }
+/* Group-stage advancement tiers (kept for standings table) */
 .team-prob-pill.tier-green  { background: #dcfce7; color: #16a34a; }
 .team-prob-pill.tier-yellow { background: #fef3c7; color: #92660a; }
 .team-prob-pill.tier-orange { background: #ffedd5; color: #c2410c; }
 .team-prob-pill.tier-red    { background: #fee2e2; color: #b91c1c; }
 .team-prob-pill.tier-grey   { background: #e5e7eb; color: #4b5563; }
+/* Match win probability gradient (knockout bracket) */
+.team-prob-pill.mw-g4  { background: #16a34a; color: #fff; }
+.team-prob-pill.mw-g3  { background: #4ade80; color: #14532d; }
+.team-prob-pill.mw-g2  { background: #bbf7d0; color: #15803d; }
+.team-prob-pill.mw-g1  { background: #f0fdf4; color: #15803d; }
+.team-prob-pill.mw-neu { background: #e5e7eb; color: #4b5563; }
+.team-prob-pill.mw-r1  { background: #fff7ed; color: #c2410c; }
+.team-prob-pill.mw-r2  { background: #fed7aa; color: #9a3412; }
+.team-prob-pill.mw-r3  { background: #fb923c; color: #fff; }
+.team-prob-pill.mw-r4  { background: #ef4444; color: #fff; }
 .tie-score { font-size: 13px; font-weight: 800; color: #15151a; flex-shrink: 0; }
 .pen-score { font-size: 10px; font-weight: 700; color: var(--muted); margin-left: 2px; }
 
