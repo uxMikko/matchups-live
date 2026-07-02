@@ -4,27 +4,33 @@ decides, once per refresh.py cron cycle, whether this cycle is worth
 spending one of those credits on. Persists everything needed for that
 decision in Redis, since refresh.py itself is stateless across runs:
 
-  odds:credits_remaining   int, mirrors the API's x-requests-remaining
-                            header after the most recent call
-  odds:matchups            {sorted "TeamA|TeamB" key: {home, away, p_home,
-                            p_draw, p_away, fetched_at}} - the actual odds,
-                            loaded into forecast.REAL_ODDS by refresh.py
-  odds:snapshot            {match_key: {status, home_score, away_score,
-                            red_home, red_away}} - last-seen state per
-                            match, for diffing (goal/red-card/finish
-                            detection across cron cycles)
-  odds:last_schedule_date  "YYYY-MM-DD" - last date the once-per-day
-                            schedule trigger fired
+  odds:credits_remaining    int, mirrors the API's x-requests-remaining
+                             header after the most recent call
+  odds:matchups             {sorted "TeamA|TeamB" key: {home, away, p_home,
+                             p_draw, p_away, fetched_at}} - the actual odds,
+                             loaded into forecast.REAL_ODDS by refresh.py
+  odds:snapshot             {match_key: {status, home_score, away_score,
+                             red_home, red_away}} - last-seen state per
+                             match, for diffing (goal/red-card/finish
+                             detection across cron cycles)
+  odds:last_schedule_date   "YYYY-MM-DD" - last date the once-per-day
+                             schedule trigger fired
+  odds:ko_completed_count   int - number of knockout matches with status "ft"
+                             as of the last cron cycle; used to detect new
+                             knockout results so outright odds stay fresh
 
 Trigger model (priority order, first match wins - at most one Odds API
 call per cron cycle):
-  1. post-match  - any match's status just flipped to "ft"
-  2. schedule    - within SCHEDULE_LEAD_HOURS of the day's first remaining
-                   kickoff, once per day
-  3. red-card    - new red card on a still bracket-relevant live match
-  4. goal        - new goal on a still bracket-relevant live match
+  1. post-match          - any group-stage match's status just flipped to "ft"
+  2. post-match-knockout - a new knockout result arrived (also refreshes
+                           outright/tournament-winner odds, costing 2 credits)
+  3. schedule            - within SCHEDULE_LEAD_HOURS of the day's first
+                           remaining kickoff, once per day (also refreshes
+                           outright odds)
+  4. red-card            - new red card on a still bracket-relevant live match
+  5. goal                - new goal on a still bracket-relevant live match
 
-Triggers 3-4 are skipped once spending a credit would dip below the
+Triggers 4-5 are skipped once spending a credit would dip below the
 safety-valve reserve (see _reserve()) - schedule/post-match calls are
 never skipped, since those are what keeps every fixture's odds from going
 stale even if nothing else fires.
@@ -206,12 +212,24 @@ async def _schedule_trigger_due(matches: list[dict], results: list[dict], now: d
     return last_date != next_kickoff.date().isoformat()
 
 
+async def _refresh_outrights(label: str) -> None:
+    """Fetch tournament outright odds and persist them. Updates credit ledger."""
+    outright_probs, out_meta = await odds_api.fetch_outrights()
+    if outright_probs:
+        await rc.redis_set("odds:tournament_probs", outright_probs)
+        out_remaining = out_meta.get("requests_remaining")
+        if out_remaining is not None:
+            await rc.redis_set("odds:credits_remaining", out_remaining)
+        log.info(f"Outright odds refreshed ({label}): {len(outright_probs)} teams")
+
+
 async def maybe_update_odds(
     results: list[dict],
     live_matches: list[dict],
     matches: list[dict],
     red_cards: dict,
     standings: dict,
+    ko_results: dict | None = None,
     now: datetime | None = None,
 ) -> bool:
     """Runs once per refresh.py cron cycle. Returns True if a credit was
@@ -222,6 +240,13 @@ async def maybe_update_odds(
     new_snapshot = _build_snapshot(results, live_matches, red_cards)
     await rc.redis_set("odds:snapshot", new_snapshot)
 
+    # Detect new knockout completions so outright odds stay fresh after results.
+    ko_completed = sum(1 for v in (ko_results or {}).values() if v.get("status") == "ft")
+    prev_ko_completed = (await rc.redis_get("odds:ko_completed_count")) or 0
+    new_ko_result = ko_completed > prev_ko_completed
+    if new_ko_result:
+        await rc.redis_set("odds:ko_completed_count", ko_completed)
+
     credits = await _get_credits_remaining()
     if credits <= 0:
         log.warning("Odds API budget exhausted - skipping")
@@ -230,6 +255,8 @@ async def maybe_update_odds(
     reason = None
     if _detect_post_match(old_snapshot, new_snapshot):
         reason = "post-match"
+    elif new_ko_result:
+        reason = "post-match-knockout"
     elif await _schedule_trigger_due(matches, results, now):
         reason = "schedule"
     elif credits - 1 >= _reserve(matches, results):
@@ -268,26 +295,21 @@ async def maybe_update_odds(
         stored[_match_key(mu["home"], mu["away"])] = {**mu, "fetched_at": fetched_at}
     await rc.redis_set("odds:matchups", stored)
 
-    if reason == "schedule":
-        played = {(r["home"], r["away"]) for r in results}
-        upcoming = [m for m in matches if (m["home"], m["away"]) not in played]
-        if upcoming:
-            next_date = min(
-                datetime.strptime(m["dt"], "%Y-%m-%d %H:%M").replace(tzinfo=scraper.PARIS)
-                for m in upcoming
-            ).date().isoformat()
-        else:
-            next_date = now.date().isoformat()
-        await rc.redis_set("odds:last_schedule_date", next_date)
+    if reason in ("schedule", "post-match-knockout"):
+        if reason == "schedule":
+            played = {(r["home"], r["away"]) for r in results}
+            upcoming = [m for m in matches if (m["home"], m["away"]) not in played]
+            if upcoming:
+                next_date = min(
+                    datetime.strptime(m["dt"], "%Y-%m-%d %H:%M").replace(tzinfo=scraper.PARIS)
+                    for m in upcoming
+                ).date().isoformat()
+            else:
+                next_date = now.date().isoformat()
+            await rc.redis_set("odds:last_schedule_date", next_date)
 
-        # Also refresh tournament outright odds once per day (costs 1 more
-        # credit on schedule triggers; goal/red-card triggers skip this).
-        outright_probs, out_meta = await odds_api.fetch_outrights()
-        if outright_probs:
-            await rc.redis_set("odds:tournament_probs", outright_probs)
-            # Update credit ledger to reflect the second call.
-            out_remaining = out_meta.get("requests_remaining")
-            if out_remaining is not None:
-                await rc.redis_set("odds:credits_remaining", out_remaining)
+        # Refresh tournament outright odds after every knockout result and
+        # once per day on the schedule trigger (costs 1 extra credit each time).
+        await _refresh_outrights(reason)
 
     return True

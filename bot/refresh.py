@@ -71,6 +71,7 @@ async def main():
     ])
     spent_credit = await odds_state.maybe_update_odds(
         results, live_matches, matches, red_cards, state["standings"],
+        ko_results=ko_results,
     )
     if spent_credit:
         forecast.REAL_ODDS = await odds_state.load_real_odds()
