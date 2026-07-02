@@ -275,10 +275,15 @@ function openMatchupInfoModal(num) {
   const data = _matchupModalData[num];
   if (!data) return;
   _matchupOpenNum = num;
-  const { home, away } = data;
-  const homeLabel = home?.team ? tn(home.team) : `W${num}`;
-  const awayLabel = away?.team ? tn(away.team) : `W${num}`;
-  document.getElementById("matchup-info-title").textContent = `${homeLabel} vs ${awayLabel}`;
+  let titleText = "";
+  if (data.kickoff) {
+    const d = new Date(data.kickoff);
+    titleText = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+      + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  } else {
+    titleText = knockoutRoundLabel(num) || `Match ${num}`;
+  }
+  document.getElementById("matchup-info-title").textContent = titleText;
   _renderMatchupInfoBody();
   document.getElementById("matchup-info-backdrop").style.display = "flex";
 }
@@ -365,34 +370,22 @@ function _renderMatchupInfoBody() {
       <div class="mim-score-nums">${homeScore} – ${awayScore}</div>
       <div class="mim-score-meta"><span class="mim-live-dot"></span>${minLabel}</div>
     </div>`;
-  } else if (kickoff) {
-    const d = new Date(kickoff);
-    const dateStr = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-      + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-    html += `<div class="mim-kickoff">📅 ${dateStr}</div>`;
   }
 
   // ── Odds / ELO section (skip when finished — result speaks for itself) ────
   if (!isFinished) {
     if (pHome != null) {
       const fairH = 1 / pHome, fairA = 1 / pAway;
-      const hName = hasHome ? tn(home.team) : "Home";
-      const aName = hasAway ? tn(away.team) : "Away";
       html += `<div class="mim-odds-toggle">
-        <span class="mim-toggle-label">Format</span>
         <button class="mim-toggle-btn${_matchupOddsMode === "decimal" ? " active" : ""}" data-mode="decimal">Decimal</button>
         <button class="mim-toggle-btn${_matchupOddsMode === "fractional" ? " active" : ""}" data-mode="fractional">Fractional</button>
       </div>
       <div class="mim-odds-row">
         <div class="mim-odds-cell">
-          <span class="mim-odds-label">${hName}</span>
           <span class="mim-odds-value">${_fmtOdds(fairH)}</span>
-          <span class="mim-odds-implied">${pct(pHome)}%</span>
         </div>
         <div class="mim-odds-cell">
-          <span class="mim-odds-label">${aName}</span>
           <span class="mim-odds-value">${_fmtOdds(fairA)}</span>
-          <span class="mim-odds-implied">${pct(pAway)}%</span>
         </div>
       </div>`;
 

@@ -434,30 +434,26 @@ header { padding: 14px 8px 10px; border-bottom: 1px solid var(--border); display
   background: #fff; border-radius: 12px; width: 100%; max-width: 420px;
   max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
 }
-.matchup-info-title { font-size: 15px; font-weight: 800; }
-.matchup-info-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.matchup-info-title { font-size: 13px; font-weight: 600; color: var(--muted); }
+.matchup-info-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 /* Team header — flag above name above win% */
-.mim-teams { display: flex; align-items: flex-start; gap: 10px; }
-.mim-team { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.mim-teams { display: flex; align-items: flex-start; gap: 10px; width: 100%; justify-content: center; }
+.mim-team { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; max-width: 120px; }
 .mim-flag { width: 56px; height: 42px; object-fit: cover; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,0.12); display: block; }
 .mim-team-name { font-size: 13px; font-weight: 700; text-align: center; }
 .mim-vs-col { color: #9aa0ad; font-size: 12px; font-weight: 700; align-self: center; flex-shrink: 0; padding-bottom: 20px; }
 /* Score / live state display */
-.mim-score-display { background: var(--surface); border-radius: 10px; padding: 10px 16px; text-align: center; }
+.mim-score-display { background: var(--surface); border-radius: 10px; padding: 10px 16px; text-align: center; width: 100%; }
 .mim-score-nums { font-size: 28px; font-weight: 800; letter-spacing: 4px; }
 .mim-score-meta { font-size: 11px; font-weight: 700; color: var(--muted); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 5px; }
 .mim-live-dot { display: inline-block; width: 7px; height: 7px; background: #ef4444; border-radius: 50%; flex-shrink: 0; }
-.mim-kickoff { font-size: 13px; color: var(--muted); font-weight: 600; }
-.mim-odds-toggle { display: flex; align-items: center; gap: 6px; }
-.mim-toggle-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 2px; }
+.mim-odds-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .mim-toggle-btn { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 6px; border: 1.5px solid var(--border); background: none; color: var(--muted); cursor: pointer; transition: background 0.1s; }
 .mim-toggle-btn.active { background: #15151a; color: #fff; border-color: #15151a; }
-.mim-odds-row { display: flex; gap: 8px; }
-.mim-odds-cell { flex: 1; background: var(--surface); border-radius: 8px; padding: 10px 6px; text-align: center; }
-.mim-odds-label { display: block; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mim-odds-value { display: block; font-size: 17px; font-weight: 800; margin-bottom: 2px; }
-.mim-odds-implied { display: block; font-size: 11px; color: var(--muted); }
-.mim-source { font-size: 12px; color: var(--muted); line-height: 1.5; display: flex; gap: 6px; background: var(--surface); border-radius: 8px; padding: 10px; }
+.mim-odds-row { display: flex; gap: 8px; width: 100%; }
+.mim-odds-cell { flex: 1; background: var(--surface); border-radius: 8px; padding: 14px 6px; text-align: center; }
+.mim-odds-value { display: block; font-size: 20px; font-weight: 800; }
+.mim-source { font-size: 12px; color: var(--muted); line-height: 1.5; display: flex; gap: 6px; background: var(--surface); border-radius: 8px; padding: 10px; width: 100%; }
 .mim-source-icon { flex-shrink: 0; }
 .mim-elo-section { display: flex; flex-direction: column; gap: 8px; }
 .mim-elo-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
