@@ -2438,11 +2438,15 @@ function renderLabBracket(bracket, laterRounds) {
       const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
       const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
       const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
+      const isFinished = actualM?.status === "ft";
+      const decidedByPen = actualM?.decided_by_pen ?? false;
       return resultCard(num, m.home, m.away, {
         homeScore, awayScore, homeIsWinner, awayIsWinner,
-        extraClass: `lab-card later-round${pick ? " lab-picked" : ""}`,
+        extraClass: `lab-card later-round${pick ? " lab-picked" : ""}${isFinished ? " finished" : ""}`,
         style,
         attrs: `data-number="${num}" data-match-num="${num}"`,
+        decidedByPen, penHome: decidedByPen ? (actualM?.pen_home ?? null) : null,
+        penAway: decidedByPen ? (actualM?.pen_away ?? null) : null,
       });
     }
     return labTbdCard(num, style);
@@ -2461,10 +2465,14 @@ function renderLabBracket(bracket, laterRounds) {
       const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
       const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
       const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
+      const isFinished = actualM?.status === "ft";
+      const decidedByPen = actualM?.decided_by_pen ?? false;
       return resultCard(num, m.home, m.away, {
         homeScore, awayScore, homeIsWinner, awayIsWinner,
-        extraClass: `lab-card later-round${pick ? " lab-picked" : ""}`,
+        extraClass: `lab-card later-round${pick ? " lab-picked" : ""}${isFinished ? " finished" : ""}`,
         attrs: `data-number="${num}" data-match-num="${num}"`,
+        decidedByPen, penHome: decidedByPen ? (actualM?.pen_home ?? null) : null,
+        penAway: decidedByPen ? (actualM?.pen_away ?? null) : null,
       });
     }
     return labTbdCard(num);
@@ -2497,11 +2505,15 @@ function renderLabBracket(bracket, laterRounds) {
     const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
     const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
     const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
+    const isFinished = actualM?.status === "ft";
+    const decidedByPen = actualM?.decided_by_pen ?? false;
     return resultCard(m.match_number, m.home, m.away, {
       homeScore, awayScore, homeIsWinner, awayIsWinner,
-      extraClass: `lab-card${changed ? " lab-flash" : ""}${pick ? " lab-picked" : ""}`,
+      extraClass: `lab-card${changed ? " lab-flash" : ""}${pick ? " lab-picked" : ""}${isFinished ? " finished" : ""}`,
       style: `grid-column:1;grid-row:${i + 2}`,
       attrs: `data-slot="${m.slot}" data-match-num="${m.match_number ?? i + 73}"`,
+      decidedByPen, penHome: decidedByPen ? (actualM?.pen_home ?? null) : null,
+      penAway: decidedByPen ? (actualM?.pen_away ?? null) : null,
     });
   }).join("");
 
@@ -2517,11 +2529,15 @@ function renderLabBracket(bracket, laterRounds) {
     const winnerTeam = pick?.winner ?? actualM?.winner ?? null;
     const homeIsWinner = winnerTeam != null ? (winnerTeam === m.home?.team) : undefined;
     const awayIsWinner = winnerTeam != null ? (winnerTeam === m.away?.team) : undefined;
+    const isFinished = actualM?.status === "ft";
+    const decidedByPen = actualM?.decided_by_pen ?? false;
     return resultCard(m.match_number, m.home, m.away, {
       homeScore, awayScore, homeIsWinner, awayIsWinner,
-      extraClass: `lab-card${changed ? " lab-flash" : ""}${pick ? " lab-picked" : ""}`,
+      extraClass: `lab-card${changed ? " lab-flash" : ""}${pick ? " lab-picked" : ""}${isFinished ? " finished" : ""}`,
       style: `grid-column:7;grid-row:${i + 2}`,
       attrs: `data-slot="${m.slot}" data-match-num="${m.match_number ?? i + 81}"`,
+      decidedByPen, penHome: decidedByPen ? (actualM?.pen_home ?? null) : null,
+      penAway: decidedByPen ? (actualM?.pen_away ?? null) : null,
     });
   }).join("");
 
