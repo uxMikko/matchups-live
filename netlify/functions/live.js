@@ -180,20 +180,16 @@ export async function handler() {
       const homeName = teamName(homeC.team.displayName);
       const awayName = teamName(awayC.team.displayName);
 
-      // Detect penalty shootout from ESPN's status strings.
+      // Detect penalty shootout via ESPN's status name (STATUS_FINAL_PEN).
       const statusStr = [statusType.name, statusType.description, statusType.shortDetail]
         .filter(Boolean).join(" ").toLowerCase();
-      const decidedByPen = /pen(alt[yi])?|pk|shootout/.test(statusStr);
+      const decidedByPen = /pen(alt[yi])?|pk|shootout|final_pen/.test(statusStr);
 
-      // Try to extract penalty shootout period scores from competitors' linescores.
-      // ESPN adds a "shootout" or "SO" typed period after full-time and extra time.
+      // ESPN exposes shootoutScore per competitor — use it directly.
+      // linescores are not included in the scoreboard endpoint for completed matches.
       const penScore = (c) => {
-        const ls = c.linescores || [];
-        const soPeriod = ls.find(l =>
-          /shoot|so$/i.test(l.period?.type || "") ||
-          l.period?.abbreviation?.toLowerCase() === "so"
-        );
-        return soPeriod ? parseInt(soPeriod.value, 10) : null;
+        const v = c.shootoutScore;
+        return v != null ? parseInt(v, 10) : null;
       };
 
       knockout.push({

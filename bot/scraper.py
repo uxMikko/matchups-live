@@ -288,28 +288,31 @@ async def fetch_knockout_results() -> dict[str, dict]:
         home_score = int(home_c["score"])
         away_score = int(away_c["score"])
 
-        # Detect penalty shootout — same logic as live.js
+        # Detect penalty shootout via ESPN's status name (more reliable than
+        # parsing status strings — STATUS_FINAL_PEN is unambiguous).
+        status_name = status_type.get("name", "")
         status_str = " ".join(filter(None, [
-            status_type.get("name"), status_type.get("description"), status_type.get("shortDetail")
+            status_name, status_type.get("description"), status_type.get("shortDetail")
         ])).lower()
-        decided_by_pen = bool(__import__("re").search(r"pen(alt[yi])?|pk|shootout", status_str))
+        decided_by_pen = bool(re.search(r"pen(alt[yi])?|pk|shootout|final_pen", status_str))
 
-        pen_home = pen_away = None
-        winner = None
-        if decided_by_pen:
-            for c, side in [(home_c, "home"), (away_c, "away")]:
-                ls = c.get("linescores", [])
-                so = next((l for l in ls if
-                    __import__("re").search(r"shoot|so$", (l.get("period") or {}).get("type", ""), __import__("re").IGNORECASE) or
-                    (l.get("period") or {}).get("abbreviation", "").lower() == "so"
-                ), None)
-                val = int(so["value"]) if so else None
-                if side == "home":
-                    pen_home = val
-                else:
-                    pen_away = val
-            if pen_home is not None and pen_away is not None:
-                winner = home if pen_home > pen_away else away
+        # ESPN exposes shootoutScore and a winner boolean per competitor —
+        # use these directly instead of parsing linescores (which aren't
+        # included in the scoreboard endpoint for completed matches).
+        pen_home = home_c.get("shootoutScore")
+        pen_away = away_c.get("shootoutScore")
+        if pen_home is not None:
+            try: pen_home = int(pen_home)
+            except (TypeError, ValueError): pen_home = None
+        if pen_away is not None:
+            try: pen_away = int(pen_away)
+            except (TypeError, ValueError): pen_away = None
+
+        # winner: prefer ESPN's own boolean over score inference (handles pens)
+        if home_c.get("winner"):
+            winner = home
+        elif away_c.get("winner"):
+            winner = away
         else:
             winner = home if home_score > away_score else away
 
