@@ -105,6 +105,20 @@ The Odds API → odds_state.py (inside refresh.py, once/day + triggers) → Redi
 
 ---
 
+## Knockout Match Results — How They Flow to the Frontend
+
+The live endpoint (`live.js`) only returns matches currently active or from today. Concluded R32/R16/QF/SF matches age out of ESPN's live scoreboard within ~24 hours. After that:
+
+- **Scores, status, and penalty data** must come from `cachedState.bracket` (populated by `refresh.py` → `project_full_knockout_bracket()` which patches R32 entries from `ko_results`).
+- **`winner` field** comes from either the next-round bracket entry (`winnerOf`) or from `m.winner` (set by `scraper.fetch_knockout_results()` using the explicit `winner` field, which handles penalty-decided matches where scores are tied).
+- **`decided_by_pen` / `pen_home` / `pen_away`** come from `m.decided_by_pen` / `m.pen_home` / `m.pen_away` on the bracket entry, falling back to live data only for in-progress matches.
+
+`buildKnockoutStripEntries()` in app.js must always read `live?.field ?? m.field` — live endpoint first (in-progress), bracket entry second (concluded).
+
+`scraper.fetch_knockout_results()` must populate `decided_by_pen`, `pen_home`, `pen_away`, and `winner` for every completed match.
+
+---
+
 ## Things That Have Been Broken Before — Do Not Repeat
 
 1. **Showing ELO in the bracket when no real odds exist.** Fixed multiple times. The answer is always: show nothing, not ELO.
@@ -114,3 +128,5 @@ The Odds API → odds_state.py (inside refresh.py, once/day + triggers) → Redi
 5. **`odds_api.py` calling `min()` on an empty list when group stage is over.** Fixed with `if upcoming:` guard before the `min(kickoffs)` call.
 6. **`fetch_outrights()` using the wrong API endpoint.** The correct sport key is `soccer_fifa_world_cup_winner`, not `soccer_fifa_world_cup`. The latter returns 422 for outrights.
 7. **Lab showing projected scores instead of actual scores for concluded R16+ matches.** Fixed by checking `allKnockoutMatches` for actual scores before falling back to predicted/pick values in `renderLaterSlot` and `labCardOnly`.
+8. **Concluded knockout matches still editable in the Lab after ~24h.** The live endpoint stops returning historical matches, so `winner` was null and the concluded-check failed. Fixed by storing score/status/winner/pen data in the bracket Redis key via `project_full_knockout_bracket()`, and reading it in `buildKnockoutStripEntries()` as fallback.
+9. **Penalty shootout result not showing on cards.** Same root cause as #8 — `decided_by_pen` / pen scores come from live endpoint which aged out. Fixed by: (a) `scraper.fetch_knockout_results()` capturing pen data + winner, (b) `project_full_knockout_bracket()` patching R32 bracket entries, (c) `buildKnockoutStripEntries()` reading `m.decided_by_pen` / `m.pen_home` / `m.pen_away` as fallback.
