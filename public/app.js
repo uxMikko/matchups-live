@@ -326,8 +326,7 @@ function _renderMatchupInfoBody() {
     const tH = hasHome ? tp[home.team] : null;
     const tA = hasAway ? tp[away.team] : null;
     if (tH > 0 && tA > 0) {
-      pHome = tH / (tH + tA);
-      pAway = tA / (tH + tA);
+      ({ h: pHome, a: pAway } = outrightToMatchProb(tH, tA, num));
       probSource = "outright";
     }
   }
@@ -556,6 +555,21 @@ function knockoutRoundLabel(num) {
   if (num <= 102) return tr("round_sf_singular");
   if (num === 103) return tr("round_bronze_singular");
   return tr("round_final");
+}
+
+// Raw tournament outright ratio w_A/(w_A+w_B) inflates strong teams because
+// the outright probability already encodes winning n further matches. Taking the
+// n-th root converts it back to a single-match probability:
+//   w ≈ p_match^n  →  p_match ≈ w^(1/n)
+// n = rounds from THIS match to the championship (inclusive).
+function outrightToMatchProb(tH, tA, matchNum) {
+  const n = matchNum >= 89 && matchNum <= 96 ? 4
+          : matchNum >= 97 && matchNum <= 100 ? 3
+          : matchNum >= 101 && matchNum <= 102 ? 2
+          : 1; // Final, Bronze, or unknown
+  const pH = Math.pow(tH, 1 / n);
+  const pA = Math.pow(tA, 1 / n);
+  return { h: pH / (pH + pA), a: pA / (pH + pA) };
 }
 
 // Build strip entries for all known knockout matches. cachedState.bracket
@@ -822,7 +836,7 @@ function bracketTieCard(num, home, away, {
         const tp = cachedState.tournament_probs || {};
         const tH = tp[home.team], tA = tp[away.team];
         if (tH > 0 && tA > 0) {
-          const hWin = tH / (tH + tA);
+          const { h: hWin } = outrightToMatchProb(tH, tA, num);
           prob = t.team === home.team ? hWin : 1 - hWin;
         }
       }
@@ -1050,8 +1064,7 @@ function renderBracketInto(bracket, gridId, spinnerId, { trackChanges = true, sh
     const tp = cachedState.tournament_probs || {};
     const tH = tp[m.home.team], tA = tp[m.away.team];
     if (tH > 0 && tA > 0) {
-      const h = tH / (tH + tA), a = tA / (tH + tA);
-      return { h, a };
+      return outrightToMatchProb(tH, tA, m.match_number ?? 0);
     }
     return { h: null, a: null };
   };
