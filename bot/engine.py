@@ -397,6 +397,29 @@ def project_full_knockout_bracket(
     ko_results = ko_results or {}
     by_num: dict[int, dict] = {m["match_number"]: m for m in r32_bracket}
 
+    # Patch R32 entries with actual results so the frontend can read
+    # score/status/pen data from the bracket rather than relying on the
+    # live endpoint (which stops returning historical matches after ~24h).
+    for entry in r32_bracket:
+        ht = (entry.get("home") or {}).get("team")
+        at = (entry.get("away") or {}).get("team")
+        if not ht or not at:
+            continue
+        actual = ko_results.get("|".join(sorted([ht, at])), {})
+        if actual.get("status") == "ft":
+            # Flip scores if ESPN had them home/away-swapped vs bracket order
+            if actual.get("home") == ht:
+                entry["home_score"] = actual["home_score"]
+                entry["away_score"] = actual["away_score"]
+            else:
+                entry["home_score"] = actual["away_score"]
+                entry["away_score"] = actual["home_score"]
+            entry["status"] = "ft"
+            entry["decided_by_pen"] = actual.get("decided_by_pen", False)
+            entry["pen_home"] = actual.get("pen_home")
+            entry["pen_away"] = actual.get("pen_away")
+            entry["winner"] = actual.get("winner")
+
     def _winner(num: int, want_loser: bool = False) -> tuple[Optional[str], Optional[str]]:
         m = by_num.get(num)
         if not m:
@@ -411,11 +434,16 @@ def project_full_knockout_bracket(
         pair_key = "|".join(sorted([home_t, away_t]))
         actual = ko_results.get(pair_key, {})
         if actual.get("status") == "ft":
-            hs, as_ = actual["home_score"], actual["away_score"]
-            if actual.get("home") == home_t:
-                home_wins = hs > as_
+            # Use explicit winner field (handles penalties where scores are tied)
+            w = actual.get("winner")
+            if w:
+                home_wins = (w == home_t)
             else:
-                home_wins = as_ > hs
+                hs, as_ = actual["home_score"], actual["away_score"]
+                if actual.get("home") == home_t:
+                    home_wins = hs > as_
+                else:
+                    home_wins = as_ > hs
             if home_wins:
                 return (away_t, away_f) if want_loser else (home_t, home_f)
             return (home_t, home_f) if want_loser else (away_t, away_f)

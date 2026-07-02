@@ -592,11 +592,24 @@ function buildKnockoutStripEntries() {
   for (const m of cachedState.bracket) {
     if (!m.home?.team || !m.away?.team || !m.match_number) continue;
     const live = liveByNum[m.match_number];
-    const hs = live?.home_score ?? null, as_ = live?.away_score ?? null;
-    const status = live?.status ?? "ns";
-    let winner = winnerOf[m.match_number] ?? null;
+    // Live endpoint is authoritative for in-progress; bracket entry (from Redis/refresh.py)
+    // covers concluded matches that have aged out of ESPN's live scoreboard.
+    const hs = live?.home_score ?? m.home_score ?? null;
+    const as_ = live?.away_score ?? m.away_score ?? null;
+    const status = live?.status ?? m.status ?? "ns";
+    const decidedByPen = live?.decided_by_pen ?? m.decided_by_pen ?? false;
+    const penHome = live?.pen_home ?? m.pen_home ?? null;
+    const penAway = live?.pen_away ?? m.pen_away ?? null;
+    // winner: from next-round bracket (most reliable), then bracket's own winner
+    // field (set by refresh.py for penalty matches), then score comparison.
+    let winner = winnerOf[m.match_number] ?? m.winner ?? null;
     if (!winner && status === "ft" && hs != null && as_ != null && hs !== as_) {
       winner = hs > as_ ? m.home.team : m.away.team;
+    }
+    if (!winner && status === "ft" && decidedByPen) {
+      winner = penHome != null && penAway != null
+        ? (penHome > penAway ? m.home.team : m.away.team)
+        : null;
     }
     entries.push({
       number: m.match_number,
@@ -609,9 +622,9 @@ function buildKnockoutStripEntries() {
       winner,
       kickoff: m.kickoff ?? KNOCKOUT_KICKOFFS[m.match_number],
       round_label: knockoutRoundLabel(m.match_number),
-      decided_by_pen: live?.decided_by_pen ?? false,
-      pen_home: live?.pen_home ?? null,
-      pen_away: live?.pen_away ?? null,
+      decided_by_pen: decidedByPen,
+      pen_home: penHome,
+      pen_away: penAway,
     });
   }
   return entries;

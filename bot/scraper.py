@@ -285,12 +285,44 @@ async def fetch_knockout_results() -> dict[str, dict]:
             continue
         home = NAME_FROM_ESPN.get(home_c["team"]["displayName"], home_c["team"]["displayName"])
         away = NAME_FROM_ESPN.get(away_c["team"]["displayName"], away_c["team"]["displayName"])
+        home_score = int(home_c["score"])
+        away_score = int(away_c["score"])
+
+        # Detect penalty shootout — same logic as live.js
+        status_str = " ".join(filter(None, [
+            status_type.get("name"), status_type.get("description"), status_type.get("shortDetail")
+        ])).lower()
+        decided_by_pen = bool(__import__("re").search(r"pen(alt[yi])?|pk|shootout", status_str))
+
+        pen_home = pen_away = None
+        winner = None
+        if decided_by_pen:
+            for c, side in [(home_c, "home"), (away_c, "away")]:
+                ls = c.get("linescores", [])
+                so = next((l for l in ls if
+                    __import__("re").search(r"shoot|so$", (l.get("period") or {}).get("type", ""), __import__("re").IGNORECASE) or
+                    (l.get("period") or {}).get("abbreviation", "").lower() == "so"
+                ), None)
+                val = int(so["value"]) if so else None
+                if side == "home":
+                    pen_home = val
+                else:
+                    pen_away = val
+            if pen_home is not None and pen_away is not None:
+                winner = home if pen_home > pen_away else away
+        else:
+            winner = home if home_score > away_score else away
+
         key = "|".join(sorted([home, away]))
         results[key] = {
             "home": home, "away": away,
-            "home_score": int(home_c["score"]),
-            "away_score": int(away_c["score"]),
+            "home_score": home_score,
+            "away_score": away_score,
             "status": "ft",
+            "decided_by_pen": decided_by_pen,
+            "pen_home": pen_home,
+            "pen_away": pen_away,
+            "winner": winner,
         }
     return results
 
